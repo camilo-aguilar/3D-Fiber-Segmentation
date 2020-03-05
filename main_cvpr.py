@@ -3,6 +3,7 @@ from codes.train_routines import train_semantic_segmentation_net
 from codes.test_routines import test_segmentation
 import codes.utils.loss_functions as loss_fns
 import argparse
+import torch
 import os
 
 
@@ -11,7 +12,7 @@ class training_parameters:
         # IO Parameters
         self.scale_p = 1
         self.uint_16 = True
-        self.cleaning = False
+        self.cleaning = True
 
         # Network parameters
         self.n_classes = 2
@@ -43,23 +44,34 @@ class training_parameters:
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-n", "--network", type=str, default='unet',
+parser.add_argument("-m", "--mode", type=str, default='unet',
                     help="select name of parameter file")
-
-parser.add_argument("-test_dir", "--dir_test", type=str,
-                    help="select directory for testing data")
-
-parser.add_argument("-res_dir", "--dir_results", type=str,
-                    help="select directory for saving results")
 
 args = parser.parse_args()
 
-training_dir = ["/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_r/HR3_1/HR3_1", "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_r/HR3_1/HR3_2"]
-training_masks = ["/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_r/HR3_1/HR3_1_anno", "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_r/HR3_1/HR3_2_anno"]
+
+if(torch.cuda.device_count() == 1):
+    training_dir = ["/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_r/HR3_1/HR3_1", "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_r/HR3_1/HR3_2"]
+    training_masks = ["/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_r/HR3_1/HR3_1_anno", "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_r/HR3_1/HR3_2_anno"]
+
+    testing_dir = "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_s/5.35/HR/HR_5.35p"
+    testing_mask = "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_s/5.35/HR/HR_5.35p_anno"
+else:
+    training_dir = ["/pub2/aguilarh/DATASETS/Tomasz/HR3_1", "/pub2/aguilarh/DATASETS/Tomasz/HR3_2"]
+    training_masks = ["/pub2/aguilarh/DATASETS/Tomasz/HR3_1_anno", "/pub2/aguilarh/DATASETS/Tomasz/HR3_2_anno"]
+
+    testing_dir = training_dir[0] # "/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p"
+    testing_mask = training_masks[0] # "/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p_anno"
+
 
 parameters = training_parameters()
-# train_semantic_segmentation_net(parameters, training_dir, training_masks)
-
-testing_dir = "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_s/5.35/HR/HR_5.35p"
-testing_mask = "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_s/5.35/HR/HR_5.35p_anno"
-segmentation = test_segmentation(parameters, testing_dir, testing_mask)
+print(args.mode)
+if(args.mode is "train"):
+    train_semantic_segmentation_net(parameters, training_dir, training_masks)
+elif(args.mode == 'test'):
+    segmentation = test_segmentation(parameters, testing_dir, testing_mask)
+elif(args.mode is "both"):
+    train_semantic_segmentation_net(parameters, training_dir, training_masks)
+    segmentation = test_segmentation(parameters, testing_dir, testing_mask)
+else:
+    print("-m: train/test/both")

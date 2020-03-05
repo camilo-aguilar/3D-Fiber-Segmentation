@@ -13,17 +13,25 @@ def test_segmentation(params_t, data_path, mask_path=None):
     if(params_t.device is None):
         device = torch.device("cuda:0")
 
-    params_t.net.load_state_dict(torch.load(params_t.net_weights_dir[0]))
-    data_volume = tensors_io.load_volume(data_path, scale=params_t.scale_p).unsqueeze(0)
+    net_s = params_t.net
+    net_s.load_state_dict(torch.load(params_t.net_weights_dir[0]))
 
-    result = get_only_segmentation(params_t.net, data_volume, params_t.n_classes, params_t.cube_size, device=device)
+    if(params_t.uint_16 is False):
+        data_volume = tensors_io.load_volume(data_path, scale=params_t.scale_p).unsqueeze(0)
+    else:
+        data_volume = tensors_io.load_fibers_uint16(data_path, scale=params_t.scale_p).unsqueeze(0)
+
+    if(params_t.cleaning is True):
+        data_volume, mu, std = tensors_io.normalize_dataset_w_info(data_volume)
+
+    result = get_only_segmentation(net_s, data_volume, params_t.n_classes, params_t.cube_size, device=device)
 
     if(mask_path is not None):
         mask_volume = tensors_io.load_volume_uint16(mask_path, scale=params_t.scale_p).long().unsqueeze(0)
         evaluation.evaluate_segmentation(result.cpu(), mask_volume.cpu())
 
     if(params_t.debug is True):
-        tensors_io.save_subvolume_instances(data_volume, result, "results/debug_seg_testing")
+        tensors_io.save_subvolume_instances((data_volume * std) + mu, result, "results/debug_seg_testing")
     return result
 
 

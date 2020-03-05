@@ -43,6 +43,9 @@ def train_semantic_segmentation_net(t_params, data_path_list, mask_path_list):
         for data_path in data_path_list:
             data_volume_list.append((tensors_io.load_fibers_uint16(data_path, scale=scale_p)).unsqueeze(0))
 
+    if(t_params.cleaning is True):
+        for i in range(len(data_volume_list)):
+            data_volume_list[i] = tensors_io.normalize_dataset(data_volume_list[i])
     # Load Masks
     masks_list = []
     for mask_path in mask_path_list:
@@ -69,6 +72,9 @@ def train_semantic_segmentation_net(t_params, data_path_list, mask_path_list):
 
             true_masks = (mini_M > 0).long()
             true_masks_binary = (true_masks > 0).long()
+
+            if(true_masks.max() == 0):
+                continue
 
             segmentation_output = net(mini_V)
 

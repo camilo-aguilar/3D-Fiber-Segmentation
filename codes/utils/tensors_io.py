@@ -551,6 +551,24 @@ def create_histogram_ref(reference):
     return (reference_hist)
 
 
+def normalize_dataset(vol):
+    '''
+        Normalize dataset to zero mean and unit variance
+    '''
+    mu = vol.mean()
+    std = vol.std()
+    vol = (vol - mu) / std
+    return vol
+
+def normalize_dataset_w_info(vol):
+    '''
+        Normalize dataset to zero mean and unit variance
+    '''
+    mu = vol.mean()
+    std = vol.std()
+    vol = (vol - mu) / std
+    return (vol, mu, std)
+
 
 def clean_noise(vol, data_path):
     '''

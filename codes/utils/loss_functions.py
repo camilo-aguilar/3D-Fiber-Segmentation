@@ -17,7 +17,7 @@ def dice_loss(true, logits, eps=1e-7):
         eps: added to the denominator for numerical stability.
     Returns:
     """
-    num_classes = logits.max()
+    num_classes = true.max().item() + 1
     if num_classes == 1:
         true_1_hot = torch.eye(num_classes + 1)[true.squeeze(1)]
         true_1_hot = true_1_hot.permute(0, 4, 1, 2, 3).float()
@@ -41,7 +41,7 @@ def dice_loss(true, logits, eps=1e-7):
 
 
 def cross_entropy(true, logits, weights=None):
-    num_classes = logits.max()
+    num_classes = true.max().item()
     true_masks = true.contiguous().view(-1)
     segmentation_output = nn.functional.softmax(logits, dim=1)
     masks_seg_probs = segmentation_output.permute(0, 2, 3, 4, 1).contiguous().view(-1, num_classes)
