@@ -1,8 +1,6 @@
 import torch
 import torch.nn as nn
 from sklearn.cluster import DBSCAN
-from torch.autograd import Function
-from sklearn.cluster import MeanShift
 
 
 class RNet_model(nn.Module):
@@ -65,7 +63,6 @@ class ResidualBlock(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.conv2 = nn.Conv3d(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
         self.bn2 = nn.BatchNorm3d(out_channels)
-
 
     def forward(self, x):
         residual = self.res_conv(x)

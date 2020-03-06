@@ -10,6 +10,7 @@ from scipy import ndimage as ndi
 
 
 def test_segmentation(params_t, data_path, mask_path=None):
+    print("Starting testing for " + params_t.network_name)
     if(params_t.device is None):
         device = torch.device("cuda:0")
 
@@ -28,11 +29,13 @@ def test_segmentation(params_t, data_path, mask_path=None):
 
     if(mask_path is not None):
         mask_volume = tensors_io.load_volume_uint16(mask_path, scale=params_t.scale_p).long().unsqueeze(0)
-        evaluation.evaluate_segmentation(result.cpu(), mask_volume.cpu())
+        precision, recall, f1 = evaluation.evaluate_segmentation(result.cpu(), mask_volume.cpu())
+    else:
+        precision = 0
+        recall = 0
+        f1 = 0
 
-    if(params_t.debug is True):
-        tensors_io.save_subvolume_instances((data_volume * std) + mu, result, "results/debug_seg_testing")
-    return result
+    return ((data_volume * std) + mu), result, precision, recall, f1
 
 
 def get_only_segmentation(net_s, data_volume, n_classes, cube_size, device=None):

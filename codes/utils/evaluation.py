@@ -15,7 +15,7 @@ def evaluate_segmentation(Vfo, V_or):
     precision = TP / (TP + FP)
     f1 = 2 * TP / (2 * TP + FP + FN)
     print("Re:{} Pre:{} f1: {}".format(recall, precision, f1))
-    return f1
+    return precision, recall, f1
 
 
 def evaluate_segmentation_flexible(Vfo, V_or):

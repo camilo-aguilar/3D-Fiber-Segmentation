@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch
 
 
-## Segmentation
+# Semantic Segmentation
 
 def dice_loss(true, logits, eps=1e-7):
     """.
@@ -50,17 +50,12 @@ def cross_entropy(true, logits, weights=None):
     return s_loss
 
 
-def embedded_geometric_loss(outputs, labels, mini_v):
-    delta_v = 0.2
-    delta_d = 5
-
-    alpha = 2
-    beta = 2
-    gamma = 0.0000001
-    GPU_YES = torch.cuda.is_available()
-    device = torch.device("cuda" if GPU_YES else "cpu")
+# Instance Segmentation
+def embedded_loss(outputs, labels, t_params):
+    device = outputs.device
 
     N_embedded = outputs.shape[1]
+
     # idx at fibers
     idx_array = labels.nonzero()
     idx_tuple = idx_array.split(1, dim=1)
@@ -71,7 +66,8 @@ def embedded_geometric_loss(outputs, labels, mini_v):
 
     labels = torch.unique(labeled_pixels, sorted=True)
     N_objects = len(labels)
-
+    if(N_objects < 2):
+        return None
     mu_vector = torch.zeros(N_objects, N_embedded).to(device)
 
     # Find mu vector
@@ -81,7 +77,7 @@ def embedded_geometric_loss(outputs, labels, mini_v):
     for c in range(N_objects):
         fiber_id = labels[c]
         idx_c = (labeled_pixels == fiber_id).nonzero()
-        coordinates = (mini_v == fiber_id).nonzero().float()
+
         # xi vector
         x_i = torch.gather(object_pixels, 0, idx_c.repeat(1, N_embedded))
         # get mu
@@ -90,24 +86,17 @@ def embedded_geometric_loss(outputs, labels, mini_v):
 
         # get Lv
         Nc = len(idx_c)
-        weights = r_individual(coordinates)
-        if (1 in torch.isnan(weights)):
-            weights = torch.ones(Nc, device=coordinates.device)
-        else:
-            weights = 1 / (1 + torch.exp(- weights))
 
-        lv_term = torch.norm(mu_vector[c, :] - x_i, p=2, dim=1) - delta_v
+        lv_term = torch.norm(mu_vector[c, :] - x_i, p=2, dim=1) - t_params.delta_v
         lv_term = torch.clamp(lv_term, 0, 10000000)
         lv_term = lv_term**2
-
-        lv_term = lv_term * weights
         lv_term = torch.sum(lv_term, dim=0)
         Lv += (lv_term / Nc)
         Lr += torch.norm(mu, 2)
 
     for ca in range(N_objects):
         for cb in range(ca + 1, N_objects):
-            ld_term = delta_d - torch.norm(mu_vector[ca, :] - mu_vector[cb, :], 2)
+            ld_term = t_params.delta_d - torch.norm(mu_vector[ca, :] - mu_vector[cb, :], 2)
             ld_term = torch.clamp(ld_term, 0, 10000000)
             ld_term = ld_term ** 2
             Ld += ld_term
@@ -117,7 +106,7 @@ def embedded_geometric_loss(outputs, labels, mini_v):
     Lr /= N_objects
     Ld /= (N_objects * (N_objects - 1))
 
-    loss = alpha * Lv + beta * Ld + gamma * Lr
+    loss = t_params.alpha_i * Lv + t_params.beta_i * Ld + t_params.gamma_i * Lr
     return loss
 
 
@@ -190,7 +179,9 @@ def embedded_geometric_loss(outputs, labels, mini_v):
 
     loss = alpha * Lv + beta * Ld + gamma * Lr
     return loss
-def embedded_loss(outputs, labels):
+
+
+def embedded_geometric_loss(outputs, labels, mini_v):
     delta_v = 0.2
     delta_d = 5
 
@@ -198,7 +189,7 @@ def embedded_loss(outputs, labels):
     beta = 2
     gamma = 0.0000001
     GPU_YES = torch.cuda.is_available()
-    device = torch.device("cuda:0" if GPU_YES else "cpu")
+    device = torch.device("cuda" if GPU_YES else "cpu")
 
     N_embedded = outputs.shape[1]
     # idx at fibers
@@ -221,7 +212,7 @@ def embedded_loss(outputs, labels):
     for c in range(N_objects):
         fiber_id = labels[c]
         idx_c = (labeled_pixels == fiber_id).nonzero()
-
+        coordinates = (mini_v == fiber_id).nonzero().float()
         # xi vector
         x_i = torch.gather(object_pixels, 0, idx_c.repeat(1, N_embedded))
         # get mu
@@ -230,10 +221,17 @@ def embedded_loss(outputs, labels):
 
         # get Lv
         Nc = len(idx_c)
+        weights = r_individual(coordinates)
+        if (1 in torch.isnan(weights)):
+            weights = torch.ones(Nc, device=coordinates.device)
+        else:
+            weights = 1 / (1 + torch.exp(- weights))
 
         lv_term = torch.norm(mu_vector[c, :] - x_i, p=2, dim=1) - delta_v
         lv_term = torch.clamp(lv_term, 0, 10000000)
         lv_term = lv_term**2
+
+        lv_term = lv_term * weights
         lv_term = torch.sum(lv_term, dim=0)
         Lv += (lv_term / Nc)
         Lr += torch.norm(mu, 2)
@@ -252,7 +250,6 @@ def embedded_loss(outputs, labels):
 
     loss = alpha * Lv + beta * Ld + gamma * Lr
     return loss
-
 
 
 def embedded_directional_loss(network_outputs, labels):
