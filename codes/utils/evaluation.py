@@ -14,7 +14,7 @@ def evaluate_segmentation(Vfo, V_or):
     recall = TP / (TP + FN)
     precision = TP / (TP + FP)
     f1 = 2 * TP / (2 * TP + FP + FN)
-    print("Re:{} Pre:{} f1: {}".format(recall, precision, f1))
+    print("Semantic: Re:{} Pre:{} f1: {}".format(recall, precision, f1))
     return precision, recall, f1
 
 
@@ -48,80 +48,53 @@ def evaluate_segmentation_flexible(Vfo, V_or):
 
 def evaluate_iou(Vf, Vgt):
     labels_gt = np.unique(Vgt)
-    num_fibers = len(labels_gt) - 1
-
     labels_f = np.unique(Vf)
-    num_fibers_f = len(labels_f) - 1
 
     set_f = set(labels_f)
     set_gt = set(labels_gt)
 
+    # Remove background from label sets
     set_f.remove(0)
+    set_f.remove(1)
     set_gt.remove(0)
 
-    fibers_corrected_detected = 0
-    fibers_splitted_but_detected = 0
+    TP = 0
+    FP = 0
+    FN = 0
 
-    fibers_in_v_detected_double = 0
-    flag_match_detected = 0
-    mean_iou = 0
-    counter = 0
     for Lgt in set_gt:
-
-        # get gt fiber 
+        # draw gt fiber alone
         Vgt_temp = np.zeros(Vgt.shape)
         idxs_gt = np.where(Vgt == Lgt)
         Vgt_temp[idxs_gt] = 1
 
-        # get labels in detected fibers
-        labels_in_V = set(np.unique(Vf[idxs_gt]))
-        labels_in_V = labels_in_V.intersection(set_f)
+        # get overlapping labels in detected fibers (that have not been counted yet)
+        labels_in_V = set(np.unique(Vf[idxs_gt])).intersection(set_f)
 
         if(len(labels_in_V) == 0):
+            FN += 1
             continue
 
-        IOU = 0.0
-        total_intersection = 0
-        set_broken_fibers = set()
+        # Check if one of the detected labels is worth checking further
+        fiber_detected_flag = False
         for Lf in labels_in_V:
+            if(fiber_detected_flag is True):
+                FP += 1
+                continue
+            # Draw detected object
             Vf_temp = np.zeros(Vgt.shape)
-            idxs_f = np.where(Vf == Lf)
-            Vf_temp[idxs_f] = 1
-
-            #num_detected_gt_fibers = len(np.unique(Vgt[idxs_f]))
-            #if(num_detected_gt_fibers > 2):
-            #    fibers_in_v_detected_double += 1
+            Vf_temp[np.where(Vf == Lf)] = 1
 
             intersection = np.logical_and(Vgt_temp, Vf_temp).sum().astype(np.float)
             union = np.logical_or(Vgt_temp, Vf_temp).sum().astype(np.float)
-            
-            ind_IOU = intersection / union
 
-            if(ind_IOU > 0.5):
-                flag_match_detected = 1
-                fibers_corrected_detected += 1
+            IOU = intersection / union
+
+            if(IOU > 0.5):
+                TP += 1
                 set_f.remove(Lf)
-                IOU = ind_IOU
-                break
             else:
-                total_intersection += intersection
-                set_broken_fibers.add(Lf)
-            '''
-            if(not flag_match_detected):
-                IOU = total_intersection / union
-                if(IOU > 0.5):
-                    fibers_splitted_but_detected += 1
-                    for item in set_broken_fibers:
-                        set_f.remove(item)
-            '''
-        mean_iou += IOU
-        counter += 1
-
-    print("Num Fibers Gt: {}".format(num_fibers))
-    print("Labels Vf:{}".format(num_fibers_f))
-    TP = fibers_corrected_detected
-    FN = num_fibers - fibers_corrected_detected
-    FP = num_fibers_f - fibers_corrected_detected
+                FP += 1
 
     TP = float(TP)
     FN = float(FN)
@@ -130,10 +103,8 @@ def evaluate_iou(Vf, Vgt):
     recall = TP / (TP + FN)
     precision = TP / (TP + FP)
     f1 = 2 * TP / (2 * TP + FP + FN)
-    print("Recall {}".format(recall))
-    print("Precision {}".format(precision))
-    print("f1 is {}".format(f1))
-    return f1
+    print("Instace: Re:{} Pre:{} f1: {}".format(recall, precision, f1))
+    return precision, recall, f1
 
 
 def evaluate_fiber_detection(Vf, Vgt):

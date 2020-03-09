@@ -560,6 +560,7 @@ def normalize_dataset(vol):
     vol = (vol - mu) / std
     return vol
 
+
 def normalize_dataset_w_info(vol):
     '''
         Normalize dataset to zero mean and unit variance

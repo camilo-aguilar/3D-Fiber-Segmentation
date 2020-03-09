@@ -6,6 +6,7 @@ from sklearn.cluster import DBSCAN
 class RNet_model(nn.Module):
     def __init__(self, n_channels, n_classes, num_dims=16):
         super(RNet_model, self).__init__()
+        self.n_embeddings = n_classes
         self.rb1 = ResidualBlock(n_channels, num_dims)
         self.rb2 = ResidualBlock(num_dims, 2 * num_dims)
         self.rb3 = ResidualBlock(2 * num_dims, 4 * num_dims)
@@ -24,32 +25,25 @@ class RNet_model(nn.Module):
         x = self.conv(x)
         return x
 
-    def forward_inference_fast(self, x, final_pred, num_fibers=0, eps_param=0.4, min_samples_param=10):
-        GPU_YES = torch.cuda.is_available()
-        device = x.device
-        cube_size = final_pred.shape[-1]
+    def forward_inference(self, x, final_pred, params_t):
+        embedding_output = self(x).permute(0, 2, 3, 4, 1).contiguous().view(-1, self.n_embeddings)
 
-        embedding_output = self(x)
-
-        embedding_output = embedding_output.permute(0, 2, 3, 4, 1).contiguous().view(-1, self.n_embeddings)
-
+        # Check only segmented pixels
         object_indexes = (final_pred > 0).long().view(-1).nonzero()
         if(len(object_indexes) == 0):
-            return None
+            return(None)
         object_pixels = torch.gather(embedding_output, 0, object_indexes.repeat(1, self.n_embeddings))
 
-        # Numpy
+        # Vectorize and make it numpy
         X = object_pixels.detach().cpu().numpy()
-        labels = DBSCAN(eps=eps_param, min_samples=min_samples_param).fit_predict(X)  # db_scan_clusering(object_pixels.detach().cpu().numpy())
+        labels = params_t.clustering(X)
 
+        # Convert back to space domain
         space_labels = torch.zeros_like(final_pred.view(-1))
-        space_labels[object_indexes] = torch.from_numpy(labels).unsqueeze(1).to(device) + 2
+        space_labels[object_indexes] = torch.from_numpy(labels).unsqueeze(1).to(params_t.device) + 2
+        space_labels = space_labels.view(x.shape)
 
-        space_labels = space_labels.view(cube_size, cube_size, cube_size)
-
-        centers, fiber_ids, end_points, fiber_list = get_fiber_properties(space_labels)
-
-        return (space_labels, fiber_list)
+        return space_labels
 
 
 # Residual block
