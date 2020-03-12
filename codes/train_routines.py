@@ -1,6 +1,6 @@
 import codes.utils.evaluation as evaluation
 import codes.utils.tensors_io as tensors_io
-from sklearn.cluster import DBSCAN
+from codes.test_routines import get_only_segmentation
 import torch.optim as optim
 import numpy as np
 import torch
@@ -96,11 +96,6 @@ def train_instance_segmentation_net(t_params, data_path_list, mask_path_list):
 
     device = t_params.device
 
-    if(t_params.pre_trained is True):
-        print("Loading pre-trained-weights")
-        net_i.load_state_dict(torch.load(t_params.net_weights_dir[1]))
-        net_s.load_state_dict(torch.load(t_params.net_weights_dir[0]))
-
     data_volume_list = []
     # Load Data Volume
     if(t_params.uint_16 is False):
@@ -154,6 +149,7 @@ def train_instance_segmentation_net(t_params, data_path_list, mask_path_list):
 
         if((epoch) % 10 == 0 and epoch > -1):
             torch.save(net_i.state_dict(), t_params.net_weights_dir[1])
+            quick_seg_inst_test(t_params, mini_V, mini_M)
             print('Dict Saved')
         print("loss: " + str(epoch_loss / i) + ", e_loss: " + str(emb_total_loss / i) + ", s_loss: " + str(seg_total_loss / i))
     # save dictionary
@@ -168,10 +164,6 @@ def train_multitask_loss_net(t_params, data_path_list, mask_path_list):
     criterion_s = t_params.criterion_s
 
     device = t_params.device
-
-    if(t_params.pre_trained is True):
-        print("Loading pre-trained-weights")
-        net_mt.load_state_dict(torch.load(t_params.net_weights_dir[0]))
 
     data_volume_list = []
     # Load Data Volume
@@ -196,7 +188,7 @@ def train_multitask_loss_net(t_params, data_path_list, mask_path_list):
     # Send the model to GPU
     net_mt = net_mt.to(device)
 
-    for epoch in range(t_params.epochs):
+    for epoch in range(t_params.epochs_instance):
         print('Starting epoch {}/{}.'.format(epoch + 1, t_params.epochs_instance))
         net_mt.train()
         epoch_loss = 0
@@ -212,13 +204,19 @@ def train_multitask_loss_net(t_params, data_path_list, mask_path_list):
             if(true_masks.max() == 0):
                 continue
             # Evaluate Net
-            segmentation_output, embedding_output = net_mt(mini_V)
+            outputs = net_mt(mini_V)
 
-            s_loss = criterion_s((true_masks > 0).long(), segmentation_output)
-            e_loss = criterion_i(embedding_output, true_masks, t_params)
-            if(e_loss is None or s_loss is None):
-                continue
-            total_loss = s_loss + e_loss
+            if(t_params.network_name == "unet_double"):
+                segmentation_output = outputs[0]
+                embedding_output = outputs[1]
+                s_loss = criterion_s((true_masks > 0).long(), segmentation_output)
+                e_loss = criterion_i(embedding_output, true_masks, t_params)
+                if(e_loss is None or s_loss is None):
+                    continue
+                total_loss = t_params.alpha_seg * s_loss + t_params.alpha_emb * e_loss
+            else:
+                total_loss, s_loss, e_loss = t_params.criterion(outputs, true_masks, t_params)
+
             optimizer.zero_grad()
             total_loss.backward()
             optimizer.step()
@@ -230,7 +228,7 @@ def train_multitask_loss_net(t_params, data_path_list, mask_path_list):
         if((epoch) % 10 == 0):
             torch.save(net_mt.state_dict(), t_params.net_weights_dir[0])
             print('Dict Saved')
-            # net.forward_inference_train(mini_V, eps_param=1, min_samples_param=10, gt=None)
+            # quick_seg_inst_test(t_params, mini_V, mini_M)
 
         print("loss: " + str(epoch_loss / i) + ", e_loss: " + str(emb_total_loss / i) + ", s_loss: " + str(seg_total_loss / i))
     # save dictionary
@@ -331,3 +329,29 @@ def train_r_net_embedded_offset(net, net_s, data_path, mask_path, data_list2, ma
     # save dictionary
     torch.save(net.state_dict(), "info_files/r_net_offset.pth")
     print("FINISHED TRAINING")
+
+
+# ######################## Quick Evaluation ##########################################
+def quick_seg_inst_test(params_t, mini_V, mini_M):
+    # If networks have single output
+    if(params_t.network_name == "unet_double"):
+        # ######################################## Semantic and Instance Ensemble ###########################################
+        net = params_t.net
+        net.load_state_dict(torch.load(params_t.net_weights_dir[0]))
+        net = net.to(params_t.device)
+        final_pred, final_fibers = net.forward_inference(mini_V.to(params_t.device), params_t)
+    else:
+        net_s = params_t.net
+        net_e = params_t.net_i
+
+        net_s.load_state_dict(torch.load(params_t.net_weights_dir[0]))
+        net_e.load_state_dict(torch.load(params_t.net_weights_dir[1]))
+        # ###############################################Semantic Segmentation ############################################################
+        final_pred = get_only_segmentation(net_s.to(params_t.device), mini_V.to(params_t.device), params_t.n_classes, params_t.cube_size)
+        # ################################################Intance Segmentation ############################################################
+        net_i = net_e.to(params_t.device)
+        final_fibers = net_i.forward_inference(mini_V.to(params_t.device), final_pred.to(params_t.device), params_t)
+
+    seg_precision, seg_recall, seg_f1 = evaluation.evaluate_segmentation(final_pred.cpu(), mini_M.cpu())
+    ins_precision, ins_recall, ins_f1 = evaluation.evaluate_iou(final_fibers.cpu().numpy(), mini_M.cpu().numpy())
+    return mini_V, final_pred, final_fibers

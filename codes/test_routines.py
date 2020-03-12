@@ -286,19 +286,25 @@ def quick_seg_inst_test(params_t, data_path, mask_path):
     print("Cropping Mini Volume and Mask")
     max_fibers = 0
     while(max_fibers < 2):
-        (mini_V, mini_M) = tensors_io.full_crop_3D_image_batched(data_volume, masks, 100, 100, 100, params_t.cube_size)
+        (mini_V, mini_M) = tensors_io.full_crop_3D_image_batched(data_volume, masks, 100, 100, 50, params_t.cube_size)
         max_fibers = len(torch.unique(mini_M))
 
     # If networks have single output
-    if(params_t.network_name == "unet_double"):
+    if(params_t.net_i is None):
         # ######################################## Semantic and Instance Ensemble ###########################################
         net = params_t.net
         net.load_state_dict(torch.load(params_t.net_weights_dir[0]))
         net = net.to(device)
-        final_pred, final_fibers = net.forward_inference(mini_V.to(device), params_t)
+        if(params_t.debug is False):
+            final_pred, final_fibers = net.forward_inference(mini_V.to(device), params_t)
+        else:
+            final_pred, final_fibers = net.forward_inference(mini_V.to(device), params_t, mini_M)
     else:
-        net_s = params_t.net.load_state_dict(torch.load(params_t.net_weights_dir[0]))
-        net_e = params_t.net_i.load_state_dict(torch.load(params_t.net_weights_dir[1]))
+        net_s = params_t.net
+        net_e = params_t.net_i
+
+        net_s.load_state_dict(torch.load(params_t.net_weights_dir[0]))
+        net_e.load_state_dict(torch.load(params_t.net_weights_dir[1]))
         # ###############################################Semantic Segmentation ############################################################
         print("Getting Semantic Seg")
         final_pred = get_only_segmentation(net_s.to(device), mini_V.to(device), params_t.n_classes, params_t.cube_size)
@@ -307,13 +313,13 @@ def quick_seg_inst_test(params_t, data_path, mask_path):
         net_i = net_e.to(device)
         final_fibers = net_i.forward_inference(mini_V.to(device), final_pred.to(device), params_t)
 
-    if(params_t.debug):
-        mini_V = (mini_V * std) + mu
-        tensors_io.save_subvolume_instances(mini_V, mini_M, "quick_debug_gt")
-        tensors_io.save_subvolume_instances(mini_V, (mini_M.cpu() > 0).long() + (3 * final_pred > 0).cpu().long(), "quick_debug_seg_results")
-        tensors_io.save_subvolume_instances(mini_V, final_fibers, "quick_debug_inst_results")
+    mini_V = (mini_V * std) + mu
+    # if(params_t.debug):
+    #    tensors_io.save_subvolume_instances(mini_V, mini_M, "quick_debug_gt")
+    #    tensors_io.save_subvolume_instances(mini_V, (mini_M.cpu() > 0).long() + (3 * final_pred > 0).cpu().long(), "quick_debug_seg_results")
+    #    tensors_io.save_subvolume_instances(mini_V, final_fibers, "quick_debug_inst_results")
     seg_precision, seg_recall, seg_f1 = evaluation.evaluate_segmentation(final_pred.cpu(), mini_M.cpu())
     ins_precision, ins_recall, ins_f1 = evaluation.evaluate_iou(final_fibers.cpu().numpy(), mini_M.cpu().numpy())
+    seg_f1 = seg_f1.item()
     print("FINISHED TESTING")
-    return mini_V, final_pred, final_fibers
-
+    return mini_V, final_pred, final_fibers, mini_M, seg_f1, ins_f1

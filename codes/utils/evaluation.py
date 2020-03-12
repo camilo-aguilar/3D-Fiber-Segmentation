@@ -55,7 +55,8 @@ def evaluate_iou(Vf, Vgt):
 
     # Remove background from label sets
     set_f.remove(0)
-    set_f.remove(1)
+    if(1 in set_f):
+        set_f.remove(1)
     set_gt.remove(0)
 
     TP = 0
@@ -100,9 +101,9 @@ def evaluate_iou(Vf, Vgt):
     FN = float(FN)
     FP = float(FP)
 
-    recall = TP / (TP + FN)
-    precision = TP / (TP + FP)
-    f1 = 2 * TP / (2 * TP + FP + FN)
+    recall = TP / (TP + FN + 0.001)
+    precision = TP / (TP + FP + 0.0001)
+    f1 = 2 * TP / (2 * TP + FP + FN + 0.0001)
     print("Instace: Re:{} Pre:{} f1: {}".format(recall, precision, f1))
     return precision, recall, f1
 
