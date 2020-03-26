@@ -17,9 +17,6 @@ def train_semantic_segmentation_net(t_params, data_path_list, mask_path_list):
     criterion = t_params.criterion_s
 
     device = t_params.device
-    if(t_params.pre_trained is True):
-        print("Loading pre-trained-weights")
-        net.load_state_dict(torch.load(t_params.net_weights_dir[0]))
 
     data_volume_list = []
     # Load Data Volume
@@ -30,9 +27,14 @@ def train_semantic_segmentation_net(t_params, data_path_list, mask_path_list):
         for data_path in data_path_list:
             data_volume_list.append((tensors_io.load_fibers_uint16(data_path, scale=t_params.scale_p)).unsqueeze(0))
 
+    if(t_params.cleaning_sangids is True):
+        for i in range(len(data_volume_list)):
+            data_volume_list[i][0, 0, ...] = tensors_io.clean_noise(data_volume_list[i][0, 0, ...], data_volume_list[i])
+
     if(t_params.cleaning is True):
         for i in range(len(data_volume_list)):
             data_volume_list[i] = tensors_io.normalize_dataset(data_volume_list[i])
+
     # Load Masks
     masks_list = []
     for mask_path in mask_path_list:
@@ -47,7 +49,6 @@ def train_semantic_segmentation_net(t_params, data_path_list, mask_path_list):
         print('Starting epoch {}/{}.'.format(epoch + 1, t_params.epochs))
         net.train()
         epoch_loss = 0
-        emb_total_loss = 0
         seg_total_loss = 0
         for i in range(t_params.batch_size):
             data_volume = data_volume_list[i % num_datasets]
@@ -71,7 +72,7 @@ def train_semantic_segmentation_net(t_params, data_path_list, mask_path_list):
             s_loss.backward()
             optimizer.step()
 
-        if(epoch % 30 == 0):
+        if(epoch % 10 == 0):
             print('Dict Saved')
             torch.save(net.state_dict(), t_params.net_weights_dir[0])
             _, final_pred = segmentation_output.max(1)
@@ -100,10 +101,14 @@ def train_instance_segmentation_net(t_params, data_path_list, mask_path_list):
     # Load Data Volume
     if(t_params.uint_16 is False):
         for data_path in data_path_list:
-            data_volume_list.append((tensors_io.load_volume(data_path, scale=t_params.cale_p)).unsqueeze(0))
+            data_volume_list.append((tensors_io.load_volume(data_path, scale=t_params.scale_p)).unsqueeze(0))
     else:
         for data_path in data_path_list:
             data_volume_list.append((tensors_io.load_fibers_uint16(data_path, scale=t_params.scale_p)).unsqueeze(0))
+
+    if(t_params.cleaning_sangids is True):
+        for i in range(len(data_volume_list)):
+            data_volume_list[i][0, 0, ...] = tensors_io.clean_noise(data_volume_list[i][0, 0, ...], data_volume_list[i])
 
     if(t_params.cleaning is True):
         for i in range(len(data_volume_list)):
@@ -158,7 +163,7 @@ def train_instance_segmentation_net(t_params, data_path_list, mask_path_list):
 
 
 def train_multitask_loss_net(t_params, data_path_list, mask_path_list):
-    print("Starting Training for multitask loss with " + t_params.network_name + "in device " + str(t_params.device))
+    print("Starting Training for multitask loss with " + t_params.network_name + " in device " + str(t_params.device))
     net_mt = t_params.net
     criterion_i = t_params.criterion_i
     criterion_s = t_params.criterion_s
@@ -169,14 +174,19 @@ def train_multitask_loss_net(t_params, data_path_list, mask_path_list):
     # Load Data Volume
     if(t_params.uint_16 is False):
         for data_path in data_path_list:
-            data_volume_list.append((tensors_io.load_volume(data_path, scale=t_params.cale_p)).unsqueeze(0))
+            data_volume_list.append((tensors_io.load_volume(data_path, scale=t_params.scale_p)).unsqueeze(0))
     else:
         for data_path in data_path_list:
             data_volume_list.append((tensors_io.load_fibers_uint16(data_path, scale=t_params.scale_p)).unsqueeze(0))
 
+    if(t_params.cleaning_sangids is True):
+        for i in range(len(data_volume_list)):
+            data_volume_list[i][0, 0, ...] = tensors_io.clean_noise(data_volume_list[i][0, 0, ...], data_volume_list[i])
+
     if(t_params.cleaning is True):
         for i in range(len(data_volume_list)):
             data_volume_list[i] = tensors_io.normalize_dataset(data_volume_list[i])
+
     # Load Masks
     masks_list = []
     for mask_path in mask_path_list:
@@ -228,7 +238,7 @@ def train_multitask_loss_net(t_params, data_path_list, mask_path_list):
         if((epoch) % 10 == 0):
             torch.save(net_mt.state_dict(), t_params.net_weights_dir[0])
             print('Dict Saved')
-            # quick_seg_inst_test(t_params, mini_V, mini_M)
+            quick_seg_inst_test(t_params, mini_V, true_masks)
 
         print("loss: " + str(epoch_loss / i) + ", e_loss: " + str(emb_total_loss / i) + ", s_loss: " + str(seg_total_loss / i))
     # save dictionary
@@ -254,9 +264,8 @@ def train_r_net_embedded_offset(net, net_s, data_path, mask_path, data_list2, ma
     # Load Data Volume2
     temp_volume = tensors_io.load_volume(data_list2[0], scale=scale_p)
     temp_volume[0, ...] = tensors_io.clean_noise(temp_volume[0, ...], data_list2[0])
-    
+
     masks = tensors_io.load_volume_uint16(mask_path, scale=scale_p).long().unsqueeze(0)
-   
 
     (ch2, rows2, cols2, depth2) = temp_volume.shape
     num_datasets = len(data_list2)
@@ -272,17 +281,6 @@ def train_r_net_embedded_offset(net, net_s, data_path, mask_path, data_list2, ma
 
         masks2[counter, ...] = tensors_io.load_volume_uint16(mask_list2[counter], scale=scale_p).long()
 
-
-
-
-    # Load Masks
-     # masks2 = tensors_io.load_volume_uint16(mask_list2, scale=scale_p).long().unsqueeze(0)
-    
-    # Adapt Masks to semantic segmentation
-    #segmentation = get_only_segmentation(net_s, data_volume, n_classes, n_embedded, cube_size)
-    # masks = refine_watershed(masks, segmentation=segmentation)
-
-    # tensors_io.save_subvolume_instances(data_volume, masks, 'refined_seg')
     [_, channels, rows, cols, slices] = data_volume.size()
 
     # Optimizer and loss function
@@ -333,13 +331,17 @@ def train_r_net_embedded_offset(net, net_s, data_path, mask_path, data_list2, ma
 
 # ######################## Quick Evaluation ##########################################
 def quick_seg_inst_test(params_t, mini_V, mini_M):
+    device = mini_V.device
     # If networks have single output
-    if(params_t.network_name == "unet_double"):
+    if(params_t.net_i is None):
         # ######################################## Semantic and Instance Ensemble ###########################################
         net = params_t.net
         net.load_state_dict(torch.load(params_t.net_weights_dir[0]))
-        net = net.to(params_t.device)
-        final_pred, final_fibers = net.forward_inference(mini_V.to(params_t.device), params_t)
+        net = net.to(device)
+        if(params_t.debug):
+            final_pred, final_fibers, final_clusters = net.forward_inference(mini_V.to(device), params_t, mini_M)
+        else:
+            final_pred, final_fibers = net.forward_inference(mini_V.to(device), params_t)
     else:
         net_s = params_t.net
         net_e = params_t.net_i
@@ -347,11 +349,24 @@ def quick_seg_inst_test(params_t, mini_V, mini_M):
         net_s.load_state_dict(torch.load(params_t.net_weights_dir[0]))
         net_e.load_state_dict(torch.load(params_t.net_weights_dir[1]))
         # ###############################################Semantic Segmentation ############################################################
-        final_pred = get_only_segmentation(net_s.to(params_t.device), mini_V.to(params_t.device), params_t.n_classes, params_t.cube_size)
+        print("Getting Semantic Seg")
+        final_pred = get_only_segmentation(net_s.to(device), mini_V.to(device), params_t.n_classes, params_t.cube_size)
         # ################################################Intance Segmentation ############################################################
-        net_i = net_e.to(params_t.device)
-        final_fibers = net_i.forward_inference(mini_V.to(params_t.device), final_pred.to(params_t.device), params_t)
+        print("Getting Instance Seg")
+        net_i = net_e.to(device)
+        if(params_t.debug is False):
+            final_fibers = net_i.forward_inference(mini_V.to(device), final_pred.to(device), params_t)
+        else:
+            final_fibers = net_i.forward_inference(mini_V.to(device), final_pred.to(device), params_t, mini_M)
 
     seg_precision, seg_recall, seg_f1 = evaluation.evaluate_segmentation(final_pred.cpu(), mini_M.cpu())
-    ins_precision, ins_recall, ins_f1 = evaluation.evaluate_iou(final_fibers.cpu().numpy(), mini_M.cpu().numpy())
-    return mini_V, final_pred, final_fibers
+    ins_precision, ins_recall, ins_f1 = evaluation.evaluate_iou(final_fibers.cpu().numpy(), mini_M.cpu().numpy(), params_t)
+    # seg_f1 = seg_f1.item()
+    seg_f1 = 0
+    ins_f1 = 0
+
+    print("FINISHED TESTING")
+    if(params_t.debug):
+        return mini_V, final_pred, final_fibers, final_clusters, mini_M, seg_f1, ins_f1
+    else:
+        return mini_V, final_pred, final_fibers, mini_M, seg_f1, ins_f1

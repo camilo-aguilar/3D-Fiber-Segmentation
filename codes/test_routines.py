@@ -13,7 +13,7 @@ from scipy import ndimage as ndi
 # Semantic Segmentation
 #################################################################################################################
 def test_segmentation(params_t, data_path, mask_path=None):
-    print("Starting testing instance for " + params_t.network_name)
+    print("Starting testing instance for " + params_t.network_name + " in device " + str(t_params.device))
     if(params_t.device is None):
         device = torch.device("cuda:0")
 
@@ -43,7 +43,7 @@ def test_segmentation(params_t, data_path, mask_path=None):
 
 def get_only_segmentation(net_s, data_volume, n_classes, cube_size, device=None):
     if(device is None):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = data_volume.device
 
     (batch_size, channels, rows, cols, depth) = data_volume.shape
 
@@ -243,18 +243,18 @@ def merge_volume(Vol_a, Vol_b):
                             new_angle_id[fiber_id_b] = angle
                             update_in_a[fiber_id_a.item()] = new_id_map[fiber_id_b]
                     else:
-                        # Change fiber id 
+                        #  Change fiber id
                         new_id_map[fiber_id_b] = fiber_id_a
                         new_angle_id[fiber_id_b] = angle_between_a_b(f_a, f_b)
                         merged_fibers = merged_fibers + 1
-                        
+
                         # Add to merged fibers
                         added_ids_b.add(fiber_id_b)
 
         if(old_fiber_id not in added_ids_b):
             # Look where Vol_b was the old id and update Vol_a
             idxb = (Vol_b == old_fiber_id).nonzero().split(1, dim=1)
-            Vol_a[idxb] = new_fiber_id            
+            Vol_a[idxb] = new_fiber_id
         # if fiber is to merge with a fiber in Vol_a
         else:
             idxb = (Vol_b == old_fiber_id).nonzero().split(1, dim=1)
@@ -266,60 +266,93 @@ def merge_volume(Vol_a, Vol_b):
 #################################################################################################################
 # Quick Test
 #################################################################################################################
-def quick_seg_inst_test(params_t, data_path, mask_path):
-    print("Starting testing Quick Semantic and Instance for " + params_t.network_name)
+def quick_seg_inst_test(params_t, data_path, mask_path=None, start_point=[100, 100, 50]):
+    print("Starting testing Quick Semantic and Instance for " + params_t.network_name + " in device " + str(params_t.device))
     print("~~~~Using GPU~~~~")
 
     device = params_t.device
-
-    if(mask_path is not None):
-        masks = tensors_io.load_volume_uint16(mask_path, scale=params_t.scale_p).long().unsqueeze(0)
-        print("MASKS CONTAINS: {} unique fibers".format(len(torch.unique(masks))))
 
     if(params_t.uint_16 is False):
         data_volume = tensors_io.load_volume(data_path, scale=params_t.scale_p).unsqueeze(0)
     else:
         data_volume = tensors_io.load_fibers_uint16(data_path, scale=params_t.scale_p).unsqueeze(0)
 
+    if(mask_path is not None):
+        masks = tensors_io.load_volume_uint16(mask_path, scale=params_t.scale_p).long().unsqueeze(0)
+        print("MASKS CONTAINS: {} unique fiber(s)".format(len(torch.unique(masks)) - 1))
+    else:
+        masks = torch.zeros(data_volume.shape).long()
+    if(params_t.cleaning_sangids is True):
+        (mini_V, mini_M) = tensors_io.full_crop_3D_image_batched(data_volume, masks, start_point[0], start_point[1], start_point[2], (params_t.cube_size))
+        mini_V_or = mini_V.clone()
+        data_volume[0, 0, ...] = tensors_io.clean_noise(data_volume[0, 0, ...])
+
     if(params_t.cleaning is True):
         data_volume, mu, std = tensors_io.normalize_dataset_w_info(data_volume)
+        params_t.mu_d = mu
+        params_t.std_d = std
+    else:
+        mu = 0
+        std = 1
+
     print("Cropping Mini Volume and Mask")
     max_fibers = 0
     while(max_fibers < 2):
-        (mini_V, mini_M) = tensors_io.full_crop_3D_image_batched(data_volume, masks, 100, 100, 50, params_t.cube_size)
-        max_fibers = len(torch.unique(mini_M))
-
+        print("Cropping at", start_point)
+        (mini_V, mini_M) = tensors_io.full_crop_3D_image_batched(data_volume, masks, start_point[0], start_point[1], start_point[2], (params_t.cube_size))
+        if(mask_path is not None):
+            max_fibers = len(torch.unique(mini_M))
+        else:
+            max_fibers = 100
     # If networks have single output
     if(params_t.net_i is None):
         # ######################################## Semantic and Instance Ensemble ###########################################
         net = params_t.net
-        net.load_state_dict(torch.load(params_t.net_weights_dir[0]))
-        net = net.to(device)
-        if(params_t.debug is False):
-            final_pred, final_fibers = net.forward_inference(mini_V.to(device), params_t)
+        if(params_t.device == torch.device('cuda:0')):
+            net.load_state_dict(torch.load(params_t.net_weights_dir[0], map_location='cuda:0'))
         else:
-            final_pred, final_fibers = net.forward_inference(mini_V.to(device), params_t, mini_M)
+            net.load_state_dict(torch.load(params_t.net_weights_dir[0], map_location='cuda:1'))
+        net = net.to(device)
+        if(params_t.debug):
+            final_pred, final_fibers, final_clusters = net.forward_inference(mini_V.to(device), params_t, mini_M)
+        else:
+            final_pred, final_fibers = net.forward_inference(mini_V.to(device), params_t)
     else:
         net_s = params_t.net
         net_e = params_t.net_i
 
-        net_s.load_state_dict(torch.load(params_t.net_weights_dir[0]))
-        net_e.load_state_dict(torch.load(params_t.net_weights_dir[1]))
+        if(params_t.device == torch.device('cuda:0')):
+            net_s.load_state_dict(torch.load(params_t.net_weights_dir[0], map_location='cuda:0'))
+            net_e.load_state_dict(torch.load(params_t.net_weights_dir[1], map_location='cuda:0'))
+        else:
+            net_s.load_state_dict(torch.load(params_t.net_weights_dir[0], map_location='cuda:1'))
+            net_e.load_state_dict(torch.load(params_t.net_weights_dir[1], map_location='cuda:1'))
         # ###############################################Semantic Segmentation ############################################################
         print("Getting Semantic Seg")
         final_pred = get_only_segmentation(net_s.to(device), mini_V.to(device), params_t.n_classes, params_t.cube_size)
         # ################################################Intance Segmentation ############################################################
         print("Getting Instance Seg")
         net_i = net_e.to(device)
-        final_fibers = net_i.forward_inference(mini_V.to(device), final_pred.to(device), params_t)
+        if(params_t.debug):
+            final_fibers = net_i.forward_inference(mini_V.to(device), final_pred.to(device), params_t, mini_M)
+        else:
+            final_fibers = net_i.forward_inference(mini_V.to(device), final_pred.to(device), params_t)
 
     mini_V = (mini_V * std) + mu
-    # if(params_t.debug):
-    #    tensors_io.save_subvolume_instances(mini_V, mini_M, "quick_debug_gt")
-    #    tensors_io.save_subvolume_instances(mini_V, (mini_M.cpu() > 0).long() + (3 * final_pred > 0).cpu().long(), "quick_debug_seg_results")
-    #    tensors_io.save_subvolume_instances(mini_V, final_fibers, "quick_debug_inst_results")
-    seg_precision, seg_recall, seg_f1 = evaluation.evaluate_segmentation(final_pred.cpu(), mini_M.cpu())
-    ins_precision, ins_recall, ins_f1 = evaluation.evaluate_iou(final_fibers.cpu().numpy(), mini_M.cpu().numpy())
-    seg_f1 = seg_f1.item()
+
+    if(mask_path is not None):
+        seg_eval = evaluation.evaluate_segmentation(final_pred.cpu(), mini_M.cpu())
+        inst_eval = evaluation.evaluate_iou(final_fibers.cpu().numpy(), mini_M.cpu().numpy(), params_t)
+    else:
+        seg_eval = [1, 1, 1]
+        inst_eval = [1, 1, 1]
+        mini_M = mini_M * 0
+
+    if(params_t.cleaning_sangids is False):
+        mini_V_or = mini_V
+
     print("FINISHED TESTING")
-    return mini_V, final_pred, final_fibers, mini_M, seg_f1, ins_f1
+    if(params_t.debug):
+        return mini_V_or, final_pred, final_fibers, final_clusters, mini_M, seg_eval, inst_eval
+    else:
+        return mini_V_or, final_pred, final_fibers, mini_M, seg_eval, inst_eval

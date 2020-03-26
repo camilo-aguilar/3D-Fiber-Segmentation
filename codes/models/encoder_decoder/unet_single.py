@@ -32,7 +32,7 @@ class UNet(nn.Module):
         x = self.outc(x)
         return x
 
-    def forward_inference(self, x, final_pred, params_t):
+    def forward_inference(self, x, final_pred, params_t, mask=None):
         embedding_output = self(x).permute(0, 2, 3, 4, 1).contiguous().view(-1, self.n_embeddings)
 
         # Check only segmented pixels
@@ -40,6 +40,12 @@ class UNet(nn.Module):
         if(len(object_indexes) == 0):
             return(None)
         object_pixels = torch.gather(embedding_output, 0, object_indexes.repeat(1, self.n_embeddings))
+
+        # Transform from embeddings to coordinates if necessary
+        # labels = clustering_algorithm(object_pixels, final_pred).cpu().numpy()
+        if(params_t.offset_clustering):
+            coordinates = (final_pred[0, ...] == 1).nonzero()
+            object_pixels = coordinates - object_pixels
 
         # Vectorize and make it numpy
         X = object_pixels.detach().cpu().numpy()
@@ -49,5 +55,14 @@ class UNet(nn.Module):
         space_labels = torch.zeros_like(final_pred.view(-1))
         space_labels[object_indexes] = torch.from_numpy(labels).unsqueeze(1).to(params_t.device) + 2
         space_labels = space_labels.view(x.shape)
+
+                # Save the clusters (if they are in 3D)
+        if(params_t.debug):
+            space_clusters = torch.zeros_like(final_pred[0, ...])
+            t_mask = mask.clone()
+            t_mask = t_mask[0, 0, ...].to(params_t.device)
+            space_clusters[object_pixels.long().split(1, dim=1)] = torch.from_numpy(labels).unsqueeze(1).to(params_t.device) + 2
+            space_clusters[object_pixels.long().split(1, dim=1)] = t_mask[object_pixels.long().split(1, dim=1)]
+            return space_clusters
 
         return space_labels

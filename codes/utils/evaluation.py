@@ -15,7 +15,7 @@ def evaluate_segmentation(Vfo, V_or):
     precision = TP / (TP + FP)
     f1 = 2 * TP / (2 * TP + FP + FN)
     print("Semantic: Re:{} Pre:{} f1: {}".format(recall, precision, f1))
-    return precision, recall, f1
+    return precision.item(), recall.item(), f1.item()
 
 
 def evaluate_segmentation_flexible(Vfo, V_or):
@@ -46,7 +46,10 @@ def evaluate_segmentation_flexible(Vfo, V_or):
     return f1
 
 
-def evaluate_iou(Vf, Vgt):
+def evaluate_iou(Vf, Vgt, params_t=False):
+
+    if(params_t.debug):
+        labels_to_see = np.zeros(Vf.shape)
     labels_gt = np.unique(Vgt)
     labels_f = np.unique(Vf)
 
@@ -74,13 +77,19 @@ def evaluate_iou(Vf, Vgt):
 
         if(len(labels_in_V) == 0):
             FN += 1
+            if(params_t.debug):
+                labels_to_see[idxs_gt] = 2
             continue
 
+        if(len(idxs_gt[0]) < 20):
+            continue
         # Check if one of the detected labels is worth checking further
         fiber_detected_flag = False
         for Lf in labels_in_V:
             if(fiber_detected_flag is True):
                 FP += 1
+                if(params_t.debug):
+                    labels_to_see[np.where(Vf == Lf)] = 3
                 continue
             # Draw detected object
             Vf_temp = np.zeros(Vgt.shape)
@@ -94,12 +103,33 @@ def evaluate_iou(Vf, Vgt):
             if(IOU > 0.5):
                 TP += 1
                 set_f.remove(Lf)
+                if(params_t.debug):
+                    labels_to_see[idxs_gt] = 1
+                fiber_detected_flag = True
             else:
                 FP += 1
+                # set_f.remove(Lf)
+                if(params_t.debug):
+                    labels_to_see[np.where(Vf == Lf)] = 3
 
+        if(fiber_detected_flag is False):
+            FN += 1
+            if(params_t.debug):
+                labels_to_see[idxs_gt] = 2
+
+    if(params_t.debug):
+        for Lf in set_f:
+            labels_to_see[np.where(Vf == Lf)] = 3
     TP = float(TP)
     FN = float(FN)
     FP = float(FP)
+
+    if(params_t.debug):
+        from .tensors_io import save_subvolume_IoU
+        import torch
+        labels_to_see = torch.from_numpy(labels_to_see).long()
+        vol = torch.zeros(labels_to_see.shape)
+        save_subvolume_IoU(vol, labels_to_see, "IOU_checking")
 
     recall = TP / (TP + FN + 0.001)
     precision = TP / (TP + FP + 0.0001)
@@ -108,7 +138,7 @@ def evaluate_iou(Vf, Vgt):
     return precision, recall, f1
 
 
-def evaluate_fiber_detection(Vf, Vgt):
+def evaluate_fiber_detection(Vf, Vgt, params_t=None):
     labels_gt = np.unique(Vgt)
     num_fibers = 0
 

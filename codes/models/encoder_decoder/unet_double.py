@@ -1,3 +1,4 @@
+from codes.utils.clustering import clustering_algorithm
 from .unet_parts import up, down, outconv, inconv
 import torch.nn as nn
 import torch
@@ -67,73 +68,55 @@ class UNet_double(nn.Module):
         embedding_output = outputs[1].permute(0, 2, 3, 4, 1).contiguous().view(-1, params_t.n_embeddings)
         object_pixels = torch.gather(embedding_output, 0, object_indexes.repeat(1, params_t.n_embeddings))
 
-        if(params_t.debug is False):
+        if(params_t.debug):
             # Magnitude Exploring
             magnitudes = torch.norm(object_pixels, dim=1)
             magnitudes = magnitudes / magnitudes.max()
             space_mags = torch.zeros_like(final_pred.view(-1)).float()
             space_mags[object_indexes] = 1 - magnitudes.unsqueeze(1) ** (1.0 / 6.0)
-            # import codes.utils.tensors_io as tensors_io
-            # space_mags = space_mags.view(x.shape)
-            # tensors_io.save_subvolume(space_mags, "test_magnitudes")
+            space_mags = space_mags.view(x.shape)
 
-        # Transform from embeddings to coordinates if necessary
-        if(params_t.offset_clustering):
-            object_pixels = transform_embedding_to_coordinates(object_pixels.cpu(), final_pred.cpu())
-        labels = clustering_algorithm(magnitudes, object_pixels).cpu().numpy()
+        if(params_t.debug_cluster_unet_double):
+                labels = clustering_algorithm(object_pixels, final_pred, mask).cpu().numpy()
+        else:
+            # Transform from embeddings to coordinates if necessary
+            if(params_t.offset_clustering):
+                object_pixels = object_pixels.cpu()
+                final_pred = final_pred.cpu()
+                object_pixels = transform_embedding_to_coordinates(object_pixels, final_pred)
+                final_pred = final_pred.to(params_t.device)
+                object_pixels = object_pixels.to(params_t.device)
 
-        # Vectorize and make it numpy
-        # X = object_pixels.detach().cpu().numpy()
-        # labels = params_t.clustering(X)
+            # Vectorize and make it numpy
+            X = object_pixels.detach().cpu().numpy()
+            labels = params_t.clustering(X)
 
         # Convert back to space domain
         space_labels = torch.zeros_like(final_pred.view(-1))
-        space_labels[object_indexes] = torch.from_numpy(labels).unsqueeze(1).to(params_t.device)# + 2
+        space_labels[object_indexes] = torch.from_numpy(labels).unsqueeze(1).to(params_t.device) + 2
+        space_labels = space_labels.view(x.shape)
 
         # Save the clusters (if they are in 3D)
         if(params_t.debug):
             space_clusters = torch.zeros_like(final_pred[0, ...])
-            t_mask = mask.clone()
-            t_mask = t_mask[0, 0, ...].to(params_t.device)
-            space_clusters[object_pixels.long().split(1, dim=1)] = torch.from_numpy(labels).unsqueeze(1).to(params_t.device) + 2
-            space_clusters[object_pixels.long().split(1, dim=1)] = t_mask[object_pixels.long().split(1, dim=1)]
-            import codes.utils.tensors_io as tensors_io
-            space_mags = space_mags.view(x.shape)
-            tensors_io.save_subvolume_instances(space_mags, space_clusters.unsqueeze(0).unsqueeze(0), "test_magnitudes_clusters")
-            return final_pred, space_clusters.unsqueeze(0).unsqueeze(0)
+            if(mask is not None):
+                t_mask = mask.clone()
+                t_mask = t_mask[0, 0, ...].to(params_t.device)
+                space_clusters[object_pixels.long().split(1, dim=1)] = t_mask[object_pixels.long().split(1, dim=1)]
+            else:
+                space_clusters[object_pixels.long().split(1, dim=1)] = torch.from_numpy(labels).unsqueeze(1).to(params_t.device) + 2
 
-        space_labels = space_labels.view(x.shape)
+            # import codes.utils.tensors_io as tensors_io
+            # tensors_io.save_subvolume_instances(space_clusters.float() * 0, (space_clusters > 0).unsqueeze(0).unsqueeze(0), "debug/test_magnitudes_clusters_binary")
+            # tensors_io.save_subvolume_instances(space_mags, (space_clusters * 0).unsqueeze(0).unsqueeze(0), "debug/test_magnitudes_magnitude_only")
+            # tensors_io.save_subvolume_instances(space_mags * 0, (space_clusters).unsqueeze(0).unsqueeze(0), "debug/test_labels_only")
+            # exit()
+            return final_pred, space_labels, space_clusters.unsqueeze(0).unsqueeze(0)
+
         return final_pred, space_labels
 
 
 def transform_embedding_to_coordinates(object_pixels, final_pred):
-    coordinates = (final_pred[0, ...] == 1).nonzero()
+    coordinates = (final_pred[0, ...] == 1).nonzero().float()
     object_pixels = coordinates - object_pixels
     return object_pixels
-
-
-def clustering_algorithm(magnitudes, object_pixels):
-    # magnitudes is [N_foreground] object_pixels [N_foreground, 3]
-    labels = torch.zeros(magnitudes.shape, dtype=torch.long)
-    _, indexes = torch.sort(magnitudes)
-    threshold = 4
-    label = 1
-    while(True):
-        # get coordinate
-        center_coord = object_pixels[indexes[0], :]
-
-        # Same dimension as indexes
-        distances = torch.norm(object_pixels[indexes, :] - center_coord, dim=1)
-
-        # find nearby pixels to cluster center
-        nearby_pixels = distances < threshold
-        if(nearby_pixels.nonzero().shape[0] == 1):
-            break
-        # Get indexes according to distances
-        absolute_indexes = indexes[nearby_pixels]
-        labels[absolute_indexes] = label
-
-        # change index array according to distances
-        indexes = indexes[distances >= threshold]
-        label = label + 1
-    return labels

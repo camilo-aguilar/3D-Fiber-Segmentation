@@ -40,15 +40,15 @@ def dice_loss(true, logits, eps=1e-7):
     return (1 - dice_loss)
 
 
-def cross_entropy(true, logits, weights=None):
+def cross_entropy(true, logits, weights=[1.0, 15.0]):
     num_classes = true.max().item() + 1
     true_masks = true.contiguous().view(-1)
     segmentation_output = nn.functional.softmax(logits, dim=1)
     masks_seg_probs = segmentation_output.permute(0, 2, 3, 4, 1).contiguous().view(-1, num_classes)
-    if(weights is None):
-        criterion = nn.CrossEntropyLoss().to(true.device)
-    else:
-        criterion = nn.CrossEntropyLoss(weights).to(true.device)
+    #if(weights is None):
+    #    criterion = nn.CrossEntropyLoss().to(true.device)
+    #else:
+    criterion = nn.CrossEntropyLoss(weight=torch.tensor(weights)).to(true.device)
     s_loss = criterion(masks_seg_probs, true_masks)
     return s_loss
 
@@ -170,6 +170,64 @@ def coordinate_loss(outputs, labels, t_params):
 
 
 # #################################################
+# Multitask fixed Loss
+def multi_task_fixed_loss(outputs, labels, t_params):
+    segmentation = outputs[0]
+    offset_vectors = outputs[1]
+
+    labels_ids = torch.unique(labels, sorted=True)
+    labels_ids = labels_ids[1:]
+
+    N_objects = len(labels_ids)
+    # copy 3D labels
+    labels3D = labels[0, 0, ...].clone()
+
+    # Flatten Everything and make offset_vectors 3 dimensions at the end
+    labels = labels.contiguous().view(-1)
+
+    offset_vectors = offset_vectors.permute(0, 2, 3, 4, 1).contiguous().view(-1, 3)
+
+    # idx at fibers
+    idx_array = labels.nonzero()
+    if(len(idx_array) > 0):
+        idx_tuple = idx_array.split(1, dim=1)
+    else:
+        return [None, None, None]
+    # Get only the non-zero indexes
+    labeled_pixels = labels[idx_tuple].squeeze(1)
+    object_pixels = torch.gather(offset_vectors, 0, idx_array.repeat(1, 3))
+    offset_loss = 0
+
+    for c in range(N_objects):
+        fiber_id = labels_ids[c]
+        # Get sub indexes at fiber_id
+        idx_c = (labeled_pixels == fiber_id).nonzero()
+        Nc = len(idx_c)
+        # Get output vectors at those dimensions
+        o_i = torch.gather(object_pixels, 0, idx_c.repeat(1, 3))
+
+        # Get coordinates of objects
+        coordinates = (labels3D == fiber_id).nonzero().float()
+        # Get Center Pixel
+        center_pixel = coordinates.mean(0)
+        # Get offset vector
+        o_hat = coordinates - center_pixel
+
+        # Regression
+        lv_vector = torch.norm(o_i - o_hat, p=2, dim=1)
+        lv_term = lv_vector - t_params.delta_v
+        lv_term = torch.clamp(lv_term, 0, 10000000)
+        lv_term = torch.sum(lv_term, dim=0)
+        offset_loss += (lv_term / Nc)
+
+    # ############# Sigma Vector Loss ##############
+    segmentation_loss = cross_entropy((labels > 0).long(), segmentation)
+
+    Total_Loss = offset_loss + segmentation_loss
+
+    return [Total_Loss, segmentation_loss, offset_loss]
+
+
 # Multitask Loss
 def multi_task_loss(outputs, labels, t_params):
     segmentation = outputs[0][:, 0:2, ...]

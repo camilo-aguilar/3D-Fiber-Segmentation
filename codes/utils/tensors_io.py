@@ -7,11 +7,11 @@ import torch
 import h5py
 import os
 import matplotlib.pyplot as plt
-
+from skimage import exposure
 
 #################### #################### Save Images #################### #################### ####################
 def save_subvolume(V, path, scale=1, start=1, end=None):
-    print('Saving Volumw at ' + path)
+    print('Saving Volume at ' + path)
     if not os.path.isdir(path):
         os.mkdir(path)
 
@@ -40,7 +40,7 @@ def save_subvolume(V, path, scale=1, start=1, end=None):
             img.save(path + "/subV_000" + str(i ) + ".tif")
 
 
-def save_subvolume_instances(V, M, path,  start=0, end=None):
+def save_subvolume_instances(V, M, path,  start=0, end=None, save_img=1):
     print('Saving Instances at ' + path)
     if not os.path.isdir(path):
         os.mkdir(path)
@@ -59,10 +59,11 @@ def save_subvolume_instances(V, M, path,  start=0, end=None):
     V = V.to(device)
     M = M.to(device)
     num_classes = M.max().int().item()
+    torch.manual_seed(7)
     colors_r = torch.rand(num_classes)
     colors_g = torch.rand(num_classes)
     colors_b = torch.rand(num_classes)
-    
+
     if(end is None):
         end = V.shape[-1]
     for i in range(start, end):
@@ -75,6 +76,7 @@ def save_subvolume_instances(V, M, path,  start=0, end=None):
                 continue
             indxs = (mask[0, :, :] == c).nonzero()
             if(c == 1):
+                continue
                 for idx in indxs:
                     overlay[0, idx[0], idx[1]] = 1
                     overlay[1, idx[0], idx[1]] = 1
@@ -90,6 +92,219 @@ def save_subvolume_instances(V, M, path,  start=0, end=None):
         # overlay = overlay.clamp(min_v, max_v)
         img = trans(overlay)
 
+        if(save_img == 1):
+            if(i > 999):
+                img.save(path + "/subV_" + str(i) + ".tif")
+            elif(i > 99):
+                img.save(path + "/subV_0" + str(i) + ".tif")
+            elif(i > 9):
+                img.save(path + "/subV_00" + str(i) + ".tif")
+            else:
+                img.save(path + "/subV_000" + str(i) + ".tif")
+
+    return img
+
+
+def save_subplots(V, M1, M2, M3, M4, path):
+    if(len(V.size()) > 4):
+        V = V[0, :, :, :, :]
+    if(len(M1.size()) > 4):
+        M1 = M1[0, :, :, :, :]
+    if(len(M2.size()) > 4):
+        M2 = M2[0, :, :, :, :]
+    if(len(M3.size()) > 4):
+        M3 = M3[0, :, :, :, :]
+    if(len(M4.size()) > 4):
+        M4 = M4[0, :, :, :, :]
+
+    print('Saving Instance pair at ' + path)
+    if not os.path.isdir(path):
+        os.mkdir(path)
+    torch.manual_seed(7)
+    trans = transforms.ToPILImage()
+    # Make an example plot with two subplots...
+    device = torch.device("cpu")
+    V = V.to(device)
+    M1 = M1.to(device)
+    M2 = M2.to(device)
+    M3 = M3.to(device)
+    M4 = M4.to(device)
+
+    num_classes1 = M1.max().int().item()
+    num_classes2 = M2.max().int().item()
+    num_classes3 = M3.max().int().item()
+    num_classes4 = M4.max().int().item()
+
+
+    num_classes = max(num_classes1, num_classes2, num_classes3, num_classes4)
+    colors_r = torch.rand(num_classes)
+    colors_g = torch.rand(num_classes)
+    colors_b = torch.rand(num_classes)
+
+    end = V.shape[-1]
+    start = 0
+    for i in range(start, end):
+        img = V[:, :, :, i - start]
+        mask1 = M1[:, :, :, i - start]
+        overlay1 = torch.cat([img, img, img], 0)
+        for c in mask1.unique():
+            if(c == 0):
+                continue
+            indxs = (mask1[0, :, :] == c).nonzero()
+            if(c == 1):
+                for idx in indxs:
+                    overlay1[0, idx[0], idx[1]] = 1
+                    overlay1[1, idx[0], idx[1]] = 1
+                    overlay1[2, idx[0], idx[1]] = 1
+            else:
+                for idx in indxs:
+                    overlay1[0, idx[0], idx[1]] = colors_r[c - 1]
+                    overlay1[1, idx[0], idx[1]] = colors_g[c - 1]
+                    overlay1[2, idx[0], idx[1]] = colors_b[c - 1]
+
+        mask2 = M2[:, :, :, i - start]
+        overlay2 = torch.cat([img, img, img], 0)
+        for c in mask2.unique():
+            if(c == 0):
+                continue
+            indxs = (mask2[0, :, :] == c).nonzero()
+            if(c == 1):
+                for idx in indxs:
+                    overlay2[0, idx[0], idx[1]] = 1
+                    overlay2[1, idx[0], idx[1]] = 1
+                    overlay2[2, idx[0], idx[1]] = 1
+            else:
+                for idx in indxs:
+                    overlay2[0, idx[0], idx[1]] = colors_r[c - 1]
+                    overlay2[1, idx[0], idx[1]] = colors_g[c - 1]
+                    overlay2[2, idx[0], idx[1]] = colors_b[c - 1]
+
+        mask3 = M3[:, :, :, i - start]
+        overlay3 = torch.cat([img, img, img], 0)
+        for c in mask3.unique():
+            if(c == 0):
+                continue
+            indxs = (mask3[0, :, :] == c).nonzero()
+            if(c == 1):
+                for idx in indxs:
+                    overlay3[0, idx[0], idx[1]] = 1
+                    overlay3[1, idx[0], idx[1]] = 1
+                    overlay3[2, idx[0], idx[1]] = 1
+            else:
+                for idx in indxs:
+                    overlay3[0, idx[0], idx[1]] = colors_r[c - 1]
+                    overlay3[1, idx[0], idx[1]] = colors_g[c - 1]
+                    overlay3[2, idx[0], idx[1]] = colors_b[c - 1]
+
+        mask4 = M4[:, :, :, i - start]
+        overlay4 = torch.cat([img, img, img], 0)
+        for c in mask4.unique():
+            if(c == 0):
+                continue
+            indxs = (mask4[0, :, :] == c).nonzero()
+            if(c == 1):
+                for idx in indxs:
+                    overlay4[0, idx[0], idx[1]] = 1
+                    overlay4[1, idx[0], idx[1]] = 1
+                    overlay4[2, idx[0], idx[1]] = 1
+            else:
+                for idx in indxs:
+                    overlay4[0, idx[0], idx[1]] = colors_r[c - 1]
+                    overlay4[1, idx[0], idx[1]] = colors_g[c - 1]
+                    overlay4[2, idx[0], idx[1]] = colors_b[c - 1]
+
+        img1 = trans(overlay1)
+        img2 = trans(overlay2)
+        img3 = trans(overlay3)
+        img4 = trans(overlay4)
+
+        fig = plt.figure()
+        ax1 = fig.add_subplot(2, 2, 1)
+        ax1.imshow(img1)
+
+        ax2 = fig.add_subplot(2, 2, 2)
+        ax2.imshow(img2)
+
+        ax3 = fig.add_subplot(2, 2, 3)
+        ax3.imshow(img3)
+
+        ax4 = fig.add_subplot(2, 2, 4)
+        ax4.imshow(img4)
+
+        if(i > 999):
+            fig.savefig(path + "/subV_" + str(i) + ".tif")
+        elif(i > 99):
+            fig.savefig(path + "/subV_0" + str(i) + ".tif")
+        elif(i > 9):
+            fig.savefig(path + "/subV_00" + str(i) + ".tif")
+        else:
+            fig.savefig(path + "/subV_000" + str(i) + ".tif")
+
+        plt.close()
+
+
+def save_subvolume_instances_side(V, M, path, top=1):
+    if(len(V.shape) != 5):
+        print("Error saving sides")
+        return
+    if(top == 1):
+        V = torch.transpose(V, 4, 2)
+        M = torch.transpose(M, 4, 2)
+    else:
+        V = torch.transpose(V, 4, 3)
+        M = torch.transpose(M, 4, 3)
+    save_subvolume_instances(V, M, path)
+
+
+def save_subvolume_instances_segmentation(V, M, path, start=0, end=None):
+    print('Saving Instances at ' + path)
+    if not os.path.isdir(path):
+        os.mkdir(path)
+
+    trans = transforms.ToPILImage()
+    # V is initially as channels x rows x cols x slices
+    # Make it slices x rows x cols x channels
+    # V = V.permute(3, 1, 2, 0)
+    if(len(V.size()) > 4):
+        V = V[0, :, :, :, :]
+
+    if(len(M.size()) > 4):
+        M = M[0, :, :, :, :]
+
+    device = torch.device("cpu")
+    V = V.to(device)
+    M = M.to(device)
+    if(end is None):
+        end = V.shape[-1]
+    for i in range(start, end):
+        img = V[:, :, :, i - start]
+        mask = M[:, :, :, i - start]
+        overlay = torch.cat([img, img, img], 0)
+        for c in mask.unique():
+            if(c == 0):
+                continue
+            indxs = (mask[0, :, :] == c).nonzero()
+            if(c == 1):
+                for idx in indxs:
+                    overlay[0, idx[0], idx[1]] = 0
+                    overlay[1, idx[0], idx[1]] = 1
+                    overlay[2, idx[0], idx[1]] = 0
+            elif(c == 2):
+                for idx in indxs:
+                    overlay[0, idx[0], idx[1]] = 1
+                    overlay[1, idx[0], idx[1]] = 0
+                    overlay[2, idx[0], idx[1]] = 0
+            else:
+                for idx in indxs:
+                    overlay[0, idx[0], idx[1]] = 1
+                    overlay[1, idx[0], idx[1]] = 1
+                    overlay[2, idx[0], idx[1]] = 1
+
+        # overlay[0, :, :] += 2 * mask[0, :, :].clamp(0, 1)
+        # overlay[1, :, :] += 2 * (mask[0, :, :] - 1).clamp(0, 1)
+        # overlay = overlay.clamp(min_v, max_v)
+        img = trans(overlay)
+
         if(i > 999):
             img.save(path + "/subV_" + str(i) + ".tif")
         elif(i > 99):
@@ -99,6 +314,76 @@ def save_subvolume_instances(V, M, path,  start=0, end=None):
         else:
             img.save(path + "/subV_000" + str(i) + ".tif")
 
+
+def save_subvolume_IoU(V, M, path,  start=0, end=None):
+    print('Saving Instances at ' + path)
+    if not os.path.isdir(path):
+        os.mkdir(path)
+
+    trans = transforms.ToPILImage()
+    # V is initially as channels x rows x cols x slices
+    # Make it slices x rows x cols x channels
+    # V = V.permute(3, 1, 2, 0)
+    if(len(V.size()) > 4):
+        V = V[0, :, :, :, :]
+
+    if(len(M.size()) > 4):
+        M = M[0, :, :, :, :]
+
+    device = torch.device("cpu")
+    V = V.to(device)
+    M = M.to(device)
+    num_classes = M.max().int().item()
+    if(end is None):
+        end = V.shape[-1]
+    for i in range(start, end):
+        img = V[:, :, :, i - start]
+        mask = M[:, :, :, i - start]
+
+        overlay = torch.cat([img, img, img], 0)
+        for c in mask.unique():
+            if(c == 0):
+                continue
+            indxs = (mask[0, :, :] == c).nonzero()
+            if(c == 1):
+                # 1 is TP
+                for idx in indxs:
+                    overlay[0, idx[0], idx[1]] = 0
+                    overlay[1, idx[0], idx[1]] = 1
+                    overlay[2, idx[0], idx[1]] = 0
+            elif(c == 2):
+                # 2 is FN
+                for idx in indxs:
+                    overlay[0, idx[0], idx[1]] = 0
+                    overlay[1, idx[0], idx[1]] = 0.5
+                    overlay[2, idx[0], idx[1]] = 1
+            elif(c == 3):
+                # 3 is FP
+                for idx in indxs:
+                    overlay[0, idx[0], idx[1]] = 1
+                    overlay[1, idx[0], idx[1]] = 1
+                    overlay[2, idx[0], idx[1]] = 1
+            else:
+                # 4 is FP
+                for idx in indxs:
+                    overlay[0, idx[0], idx[1]] = 1
+                    overlay[1, idx[0], idx[1]] = 0
+                    overlay[2, idx[0], idx[1]] = 0
+
+
+        # overlay[0, :, :] += 2 * mask[0, :, :].clamp(0, 1)
+        # overlay[1, :, :] += 2 * (mask[0, :, :] - 1).clamp(0, 1)
+        # overlay = overlay.clamp(min_v, max_v)
+        img = trans(overlay)
+
+        if(i > 999):
+            img.save(path + "/subV_" + str(i) + ".tif")
+        elif(i > 99):
+            img.save(path + "/subV_0" + str(i) + ".tif")
+        elif(i > 9):
+            img.save(path + "/subV_00" + str(i) + ".tif")
+        else:
+            img.save(path + "/subV_000" + str(i) + ".tif")
 
 def save_subvolume_color(V, M, path, num_classes=3, scale=1, start=1, end=None):
     if not os.path.isdir(path):
@@ -309,18 +594,23 @@ def load_volume(path, scale=2):
             im = im[:, ::scale, ::scale]
             V[:, :, :, countZ] = im
             countZ += 1
+
+    if(V.shape[0] > 1):
+        V2 = V[0, :, :, :] / 3 + V[1, :, :, :] / 3 + V[2, :, :, :] / 3
+        V = V2.unsqueeze(0).clone()
+
     return V
 
 #################### #################### H5 Files #################### #################### ####################
 
-def save_volume_h5(V, name='Volume', dataset_name='Volume', directory='./h5_files'):
+def save_volume_h5(V, name='Volume', directory='./h5_files'):
     if not os.path.isdir(directory):
         os.mkdir(directory)
 
     with h5py.File(directory + "/" + name + '.h5', 'w') as f:
-        dset = f.create_dataset(dataset_name, data=V, maxshape=(V.shape[0], V.shape[1], None))
+        dset = f.create_dataset(name, data=V, maxshape=(V.shape[0], V.shape[1], None))
 
-    create_xml_file(V.shape, directory, name, dataset_name)
+    create_xml_file(V.shape, directory, name, name)
 
 
 def append_volume_h5(V, name='Volume', dataset_name='Volume', directory='./h5_files'):
@@ -445,7 +735,7 @@ def save_images_of_h5_side(h5_volume_dir, data_volume_path, output_path, volume_
     if(end is None):
         end = start + 5
     Vf = read_volume_h5(volume_h5_name, volume_h5_name, h5_volume_dir)
-    
+
     Vf = torch.from_numpy(Vf.astype(np.long)).unsqueeze(0)
     slices = Vf.shape[-1]
     Vf = torch.transpose(Vf, 3, 2)
@@ -531,7 +821,11 @@ def random_crop_3D_image_batched2(img, mask, directions, crop_size):
     Dirs = directions[:, :, lb_x:lb_x + crop_size[0], lb_y:lb_y + crop_size[1], lb_z:lb_z + crop_size[2]]
     return (V, Mask, Dirs)
 
+
 def full_crop_3D_image_batched(img, mask, lb_x, lb_y, lb_z, crop_size):
+    lb_x = min(lb_x, img.shape[2] - crop_size)
+    lb_y = min(lb_y, img.shape[3] - crop_size)
+    lb_z = min(lb_z, img.shape[4] - crop_size)
     V = img[:, :, lb_x:lb_x + crop_size, lb_y:lb_y + crop_size, lb_z:lb_z + crop_size]
     Mask = mask[:, :, lb_x:lb_x + crop_size, lb_y:lb_y + crop_size, lb_z:lb_z + crop_size]
     return (V, Mask)
@@ -540,7 +834,7 @@ def full_crop_3D_image_batched(img, mask, lb_x, lb_y, lb_z, crop_size):
 #################### #################### Filters #################### #################### ####################
 
 def create_histogram_ref(reference):
-    reference = reference.numpy()
+    # reference = reference.numpy()
     tmpl_values, tmpl_counts = np.unique(reference.ravel(), return_counts=True)
     tmpl_quantiles = np.cumsum(tmpl_counts).astype(np.float) / (reference.size)
     print("Creating Reference...")
@@ -571,7 +865,14 @@ def normalize_dataset_w_info(vol):
     return (vol, mu, std)
 
 
-def clean_noise(vol, data_path):
+def clean_noise2(vol):
+    vol = vol.numpy()
+    for i in range(vol.shape[-1]):
+        vol[..., i] = exposure.equalize_adapthist(vol[..., i], clip_limit=0.03)
+    vol = torch.from_numpy(vol)
+    return vol
+
+def clean_noise(vol, data_path=None):
     '''
         vol must be tensor of shape [height, width, depth]
     '''
@@ -579,20 +880,24 @@ def clean_noise(vol, data_path):
     clean_vol = np.zeros(vol.shape)
 
     try:
-        tmpl_values, tmpl_quantiles =  pickle.load( open('info_files/histogram_reference.pickle', "rb" ) )
+        #tmpl_values, tmpl_quantiles = pickle.load(open('info_files/histogram_reference.pickle', "rb"))
+        stuff = np.load('info_files/histogram_references_.npy')
+        tmpl_values = stuff[0, :]
+        tmpl_quantiles = stuff[1, :]
     except:
         # Keep preset values
         print("WARNING: DID NOT FIND REFERENCE HISTOGRAM...RESULTS MAY LOOK UGLY")
-        reference =  load_full_volume(data_path, 0 ,5)
-        tmpl_values, tmpl_quantiles = create_histogram_ref(reference[0, ...])    
-    
+        slices = vol.shape[-1]
+        mid_slice = int(slices / 2)
+        reference = vol[..., mid_slice - 3:mid_slice + 3]
+        tmpl_values, tmpl_quantiles = create_histogram_ref(reference[0, ...])
     print("Adapting Sample for Neural Net")
     for i in range(vol.shape[-1]):
         source = vol[..., i]
 
         src_values, src_unique_indices, src_counts = np.unique(source.ravel(),
-                                                           return_inverse=True,
-                                                           return_counts=True)
+                                                               return_inverse=True,
+                                                               return_counts=True)
 
         src_quantiles = np.cumsum(src_counts).astype(np.float) / (source.size)
         interp_a_values = np.interp(src_quantiles, tmpl_quantiles, tmpl_values)
@@ -768,131 +1073,13 @@ def crop_random_volume(data_path, coords=[100, 100, 100], window_size=512, outpu
     V = load_full_volume_crop(data_path, sx, sy, sz, window_size)
     save_subvolume(V, output_path)
 
+
 if __name__ == '__main__':
-    print("Starting")
-    from scipy import misc
-    # a = 
-    # V = read_volume_h5('final_fibers_single_unet', 'final_fibers_single_unet')
-    #V = torch.from_numpy(V).unsqueeze(0)
+    im1 = torch.zeros(1, 10, 10, 10, 10)
+    im1_mask = torch.zeros(1, 10, 10, 10, 10)
+    im2 = torch.zeros(1, 10, 10, 10, 10)
+    im2_mask = torch.ones(1, 10, 10, 10, 10)
 
-    V = load_volume_uint16('im_uint_600_results_transformed', scale=2)
-    print(V.shape)
-    save_subvolume_instances((V * 0).float(), V.long(), 'instances_for_display_mpp')
-    exit()
-    #from skimage import measure
-    #read_dictionary("from_meanpill/dict.txt")
-    '''
-    from scipy import misc
-    # a = misc.imresize(a, 2, interp='nearest')
-    
-    data_path = 'TRAINING_DATA'
-    # mask_path = 'TRAINING_LABELS'
-    mask_path = "updated_fibers/UPDATED_TRAINING_LABELS"
-    masks = load_volume_uint16(mask_path, scale=2)
-    masks = masks / masks.max()
-
-    save_subvolume(masks, "test_writting_uint16", scale=1, start=1, end=None)
-    
-    '''
-
-    '''
-    V = load_volume("process_all_instances", scale=1)
-    print(V.shape)
-    V = V.transpose(2, 3)
-    save_subvolume(V, "process_all_instances_t2")
-    '''
-    '''
-    data_path = '/Storage/DATASETS/Fibers/Tiff_files_tomo_data'
-    crop_random_volume(data_path, coords=[1300, 1300, 600], window_size=512, output_path=None)
-    '''
-
-
-    V = read_volume_h5('volume_fiber_voids_labeled_voids', 'volume_fiber_voids_labeled_voids', 'h5_statistics')
-    print(V.shape)
-    V = V[200:400, 200:400, 200:400]
-    V = save_volume_h5(V, "Volume_1", "Volume1", "./")
-
-    '''
-    V = V[0:100, 0:100, 0:100]
-    print("Getting Fiber Properties")
-    list_2 = fit_all_torch(torch.from_numpy(V).unsqueeze(0).unsqueeze(0).cuda())
-
-    centers, fiber_ids, end_points, fiber_list= get_fiber_properties(torch.from_numpy(V).cuda())
-
-    f = open("dict_my_way.txt", "w")
-    for k in fiber_list.keys():
-        el = fiber_list[k]
-        w_fit = np.array([el[6], el[7], el[8]])
-        Txy = np.arctan2(w_fit[1], w_fit[0]) * 180 / np.pi
-        if(Txy < 0):
-            Txy = 180 + Txy
-        Tz = np.arccos(np.dot(w_fit, np.array([0, 0, 1])) / np.linalg.norm(w_fit, 2)) * 180 / np.pi
-
-        f.write("{},{:.0f},{:.0f},{:.0f},{:.2f},{:.2f},{:.3f},{:.3f}\n".format(el[0],el[1],el[2],el[3],el[4],el[5],Txy, Tz))
-    f.close()
-
-    print("Getting Fiber Properties 2 ")
-    list_1 = fit_all_fibers_parallel(V)
-
-
-    
-
-    f = open("dict_other_way.txt", "w")
-    for k in range(len(list_1)):
-        el = list_1[k]
-        el3 = list_2[k]
-        el2 = fiber_list[el[0]]
-        w_fit = np.array([el2[6], el2[7], el2[8]])
-        Txy = np.arctan2(w_fit[1], w_fit[0]) * 180 / np.pi
-        if(Txy < 0):
-            Txy = 180 + Txy
-        Tz = np.arccos(np.dot(w_fit, np.array([0, 0, 1])) / np.linalg.norm(w_fit, 2)) * 180 / np.pi
-
-        f.write("{},{:.0f},{:.0f},{:.0f},{:.2f},{:.2f},  {:.0f},  {:.0f}\n".format(el2[0],el2[1],el2[2],el2[3],el2[4],el2[5],Txy, Tz))
-        f.write("{},{:.0f},{:.0f},{:.0f},{:.2f},{:.2f},  {:.0f},  {:.0f},     {:.3f}\n".format(el[0],el[1],el[2],el[3],el[4],el[5],el[6],el[7],el[8]))
-        f.write("{},{:.0f},{:.0f},{:.0f},{:.2f},{:.2f},  {:.0f},  {:.0f},     {:.3f}\n\n".format(el3[0],el3[1],el3[2],el3[3],el3[4],el3[5],el3[6],el3[7],el3[8]))
-    f.close()
-    '''
-
-
-    #save_images_of_h5('from_meanpill', data_path, 'converted_from_h5', volume_h5_name='final_fibers', start=0, end=200)
-
-    '''
-    '''
-    '''
-    print(a[0].mean())
-    print(a[1].mean())
-    print(a[2].mean())
-    V = torch.from_numpy(V.astype(np.int16)).unsqueeze(0)
-    save_subvolume(V, "upsampled")
-    print(V[0, 25,196, 2])
-    '''
-    #data_path = "/pub2/aguilarh/DATASETS/Tiff_files_tomo_data"
-    #massive_fitting('h5_files',  volume_h5_name='final_fibers', start=0, end=100)
-    #save_images_of_h5('h5_files', data_path, 'converted_from_h5_3', volume_h5_name='final_fibers0')#, start=0, end=20)
-    #save_images_of_h5_voids(data_path, 'converted_from_h5', 'h5_files', 'final_fibers', "../../NN_TAPEOUT/h5_files", volume_voids_h5="outV", start=0, end=50)
-    #debug_merge_volume_z()
-
-    #save_images_of_h5('from_meanpill', data_path, 'converted_from_h5', volume_h5_name='final_fibers', start=0, end=200)
-    #displaying_statistics('statistics', 'final_fibers', 'voids')
-
-    #save_images_of_h5_only('h5_files', "comer", volume_h5_name='simple_fibers_angle_30_p2', volume_voids_h5="simple_voids")
-
-    # create_tiling(np.zeros([256, 256, 256]), 64, 0.2)
-    '''
-    V = read_volume_h5('simple_fibers_merged','simple_fibers_merged','h5_files')
-    print(V.shape)
-    Z = np.zeros(V.shape)
-    Z[np.where(V == 336)] = 2
-    # 
-    Z = torch.from_numpy(Z)
-    Z = refine_connected(Z)
-    Z = Z.numpy()
-    # print(A == Z)
-
-    print("Here")
-
-    temp_labels, temp_nums = measure.label(Z, return_num=True)
-    print(temp_nums)
-    '''
-
+    im_1_s = save_subvolume_instances(im1, im1_mask, path='.', save_img=0)
+    im_2_s = save_subvolume_instances(im2, im2_mask, path='.', save_img=0)
+    save_subplots(im_1_s, im_2_s)
