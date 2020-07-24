@@ -58,11 +58,10 @@ class UNet_double(nn.Module):
         # Segmentation
         masks_probs = nn.functional.softmax(outputs[0], dim=1).float()
         _, final_pred = masks_probs.max(1)
-
         # Check only segmented pixels
         object_indexes = (final_pred > 0).long().view(-1).nonzero()
         if(len(object_indexes) == 0):
-            return(None)
+            return final_pred, final_pred
 
         # Embedding
         embedding_output = outputs[1].permute(0, 2, 3, 4, 1).contiguous().view(-1, params_t.n_embeddings)
@@ -77,7 +76,8 @@ class UNet_double(nn.Module):
             space_mags = space_mags.view(x.shape)
 
         if(params_t.debug_cluster_unet_double):
-                labels = clustering_algorithm(object_pixels, final_pred, mask).cpu().numpy()
+                labels, marks = clustering_algorithm(object_pixels, final_pred, mask, ((x[0, 0, ...] * params_t.std_d) + params_t.mu_d).cpu(), params_t)
+                labels = labels.cpu().numpy()
         else:
             # Transform from embeddings to coordinates if necessary
             if(params_t.offset_clustering):
@@ -111,8 +111,13 @@ class UNet_double(nn.Module):
             # tensors_io.save_subvolume_instances(space_mags, (space_clusters * 0).unsqueeze(0).unsqueeze(0), "debug/test_magnitudes_magnitude_only")
             # tensors_io.save_subvolume_instances(space_mags * 0, (space_clusters).unsqueeze(0).unsqueeze(0), "debug/test_labels_only")
             # exit()
-            return final_pred, space_labels, space_clusters.unsqueeze(0).unsqueeze(0)
+            final_pred = final_pred.unsqueeze(0)
+            if(params_t.debug_cluster_unet_double):
+                return final_pred, space_labels, marks.unsqueeze(0).unsqueeze(0)
+            else:
+                return final_pred, space_labels, space_clusters.unsqueeze(0).unsqueeze(0)
 
+        final_pred = final_pred.unsqueeze(0)
         return final_pred, space_labels
 
 

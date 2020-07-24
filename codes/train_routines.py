@@ -1,10 +1,9 @@
 import codes.utils.evaluation as evaluation
 import codes.utils.tensors_io as tensors_io
-from codes.test_routines import get_only_segmentation
+from codes.test_routines import get_only_segmentation, quick_seg_inst_test
 import torch.optim as optim
-import numpy as np
 import torch
-
+import numpy as np
 # import testing_routines
 
 
@@ -44,27 +43,31 @@ def train_semantic_segmentation_net(t_params, data_path_list, mask_path_list):
     optimizer = optim.Adam(net.parameters(), lr=t_params.lr)
     num_datasets = len(data_path_list)
     # Send the model to GPU
+    print("Training for {} epochs".format(t_params.epochs))
     net = net.to(device)
     for epoch in range(t_params.epochs):
         print('Starting epoch {}/{}.'.format(epoch + 1, t_params.epochs))
         net.train()
         epoch_loss = 0
         seg_total_loss = 0
-        for i in range(t_params.batch_size):
+        for i in range(t_params.batch_size + 30):
             data_volume = data_volume_list[i % num_datasets]
             masks = masks_list[i % num_datasets]
-            (mini_V, mini_M) = tensors_io.random_crop_3D_image_batched(data_volume, masks, t_params.cube_size)
+            (mini_V, mini_M) = tensors_io.random_crop_3D_image_batched(data_volume, masks, t_params.cube_size, random_rotations=1)
 
             mini_V = mini_V.to(device)
             mini_M = mini_M.to(device)
 
-            true_masks = (mini_M > 0).long()
+            if(t_params.n_classes == 2):
+                true_masks = (mini_M > 0).long()
+            else:
+                true_masks = mini_M.long()
             if(true_masks.max() == 0):
                 continue
 
             segmentation_output = net(mini_V)
-
             s_loss = criterion(true_masks, segmentation_output)
+
             epoch_loss += s_loss.item()
             seg_total_loss += s_loss.item()
 
@@ -77,6 +80,7 @@ def train_semantic_segmentation_net(t_params, data_path_list, mask_path_list):
             torch.save(net.state_dict(), t_params.net_weights_dir[0])
             _, final_pred = segmentation_output.max(1)
             evaluation.evaluate_segmentation(final_pred, mini_M)
+
             if(t_params.debug is True):
                 tensors_io.save_subvolume_instances(mini_V, final_pred, "results/debug_seg_training")
 
@@ -91,6 +95,7 @@ def train_semantic_segmentation_net(t_params, data_path_list, mask_path_list):
 
 def train_instance_segmentation_net(t_params, data_path_list, mask_path_list):
     print("Starting Training for instance segmentation for " + t_params.network_name)
+    print("Window Size: {}. N Classes: {} N Embeddings: {} N Dim{}".format(t_params.cube_size, t_params.n_classes, t_params.n_embeddings, t_params.ndims))
     net_i = t_params.net_i
     net_s = t_params.net
     criterion_i = t_params.criterion_i
@@ -131,7 +136,7 @@ def train_instance_segmentation_net(t_params, data_path_list, mask_path_list):
         epoch_loss = 0
         emb_total_loss = 0
         seg_total_loss = 0
-        for i in range(t_params.batch_size):
+        for i in range(t_params.batch_size + 30):
             data_volume = data_volume_list[i % num_datasets]
             masks = masks_list[i % num_datasets]
             (mini_V, mini_M) = tensors_io.random_crop_3D_image_batched(data_volume, masks, t_params.cube_size)
@@ -152,9 +157,9 @@ def train_instance_segmentation_net(t_params, data_path_list, mask_path_list):
             epoch_loss += loss.item()
             emb_total_loss += loss.item()
 
-        if((epoch) % 10 == 0 and epoch > -1):
+        if((epoch) % 10 == 0 and epoch > 10):
             torch.save(net_i.state_dict(), t_params.net_weights_dir[1])
-            quick_seg_inst_test(t_params, mini_V, mini_M)
+            # quick_seg_inst_test(t_params, mini_V, mini_M)
             print('Dict Saved')
         print("loss: " + str(epoch_loss / i) + ", e_loss: " + str(emb_total_loss / i) + ", s_loss: " + str(seg_total_loss / i))
     # save dictionary
@@ -204,14 +209,16 @@ def train_multitask_loss_net(t_params, data_path_list, mask_path_list):
         epoch_loss = 0
         emb_total_loss = 0
         seg_total_loss = 0
-        for i in range(t_params.batch_size):
+        for i in range(t_params.batch_size + 30):
             data_volume = data_volume_list[i % num_datasets]
             masks = masks_list[i % num_datasets]
-            (mini_V, mini_M) = tensors_io.random_crop_3D_image_batched(data_volume, masks, t_params.cube_size)
 
+            (mini_V, mini_M) = tensors_io.random_crop_3D_image_batched(data_volume, masks, t_params.cube_size)
             mini_V = mini_V.to(device)
             true_masks = mini_M.to(device)
             if(true_masks.max() == 0):
+                sigma0 = torch.tensor(1)
+                sigma1 = torch.tensor(1)
                 continue
             # Evaluate Net
             outputs = net_mt(mini_V)
@@ -224,8 +231,10 @@ def train_multitask_loss_net(t_params, data_path_list, mask_path_list):
                 if(e_loss is None or s_loss is None):
                     continue
                 total_loss = t_params.alpha_seg * s_loss + t_params.alpha_emb * e_loss
+                sigma0 = torch.tensor(t_params.alpha_seg)
+                sigma1 = torch.tensor(t_params.alpha_emb)
             else:
-                total_loss, s_loss, e_loss = t_params.criterion(outputs, true_masks, t_params)
+                total_loss, s_loss, e_loss, sigma0, sigma1 = t_params.criterion(outputs, true_masks, t_params)
 
             optimizer.zero_grad()
             total_loss.backward()
@@ -236,11 +245,20 @@ def train_multitask_loss_net(t_params, data_path_list, mask_path_list):
             seg_total_loss += s_loss.item()
 
         if((epoch) % 10 == 0):
+            t_params.training_numbers['total_loss'].append(epoch_loss)
+            t_params.training_numbers['seg_loss'].append(seg_total_loss)
+            t_params.training_numbers['offset_loss'].append(emb_total_loss)
+            t_params.training_numbers['sigma0'].append(sigma0.cpu().item())
+            t_params.training_numbers['sigma1'].append(sigma1.cpu().item())
             torch.save(net_mt.state_dict(), t_params.net_weights_dir[0])
-            print('Dict Saved')
-            quick_seg_inst_test(t_params, mini_V, true_masks)
+            np.save(t_params.net_train_dict_dir, t_params.training_numbers)
 
-        print("loss: " + str(epoch_loss / i) + ", e_loss: " + str(emb_total_loss / i) + ", s_loss: " + str(seg_total_loss / i))
+            # mini_V_or, final_pred, final_fibers, mini_M, seg_eval, inst_eval, inst_eval_objectwise = quick_seg_inst_test(t_params)
+            # t_params.training_numbers['seg_f1_train'].append(seg_eval)
+            # t_params.training_numbers['Ra_train'].append(inst_eval)
+            print('Dict Saved')
+
+        print("loss: " + str(epoch_loss / i) + ", e_loss: " + str(emb_total_loss / i) + ", s_loss: " + str(seg_total_loss / i) + ", sigma0:" + str(sigma0.cpu().item()) + ", sigma1:" + str(sigma1.cpu().item()))
     # save dictionary
     torch.save(net_mt.state_dict(), t_params.net_weights_dir[0])
     print("FINISHED TRAINING")
@@ -328,45 +346,3 @@ def train_r_net_embedded_offset(net, net_s, data_path, mask_path, data_list2, ma
     torch.save(net.state_dict(), "info_files/r_net_offset.pth")
     print("FINISHED TRAINING")
 
-
-# ######################## Quick Evaluation ##########################################
-def quick_seg_inst_test(params_t, mini_V, mini_M):
-    device = mini_V.device
-    # If networks have single output
-    if(params_t.net_i is None):
-        # ######################################## Semantic and Instance Ensemble ###########################################
-        net = params_t.net
-        net.load_state_dict(torch.load(params_t.net_weights_dir[0]))
-        net = net.to(device)
-        if(params_t.debug):
-            final_pred, final_fibers, final_clusters = net.forward_inference(mini_V.to(device), params_t, mini_M)
-        else:
-            final_pred, final_fibers = net.forward_inference(mini_V.to(device), params_t)
-    else:
-        net_s = params_t.net
-        net_e = params_t.net_i
-
-        net_s.load_state_dict(torch.load(params_t.net_weights_dir[0]))
-        net_e.load_state_dict(torch.load(params_t.net_weights_dir[1]))
-        # ###############################################Semantic Segmentation ############################################################
-        print("Getting Semantic Seg")
-        final_pred = get_only_segmentation(net_s.to(device), mini_V.to(device), params_t.n_classes, params_t.cube_size)
-        # ################################################Intance Segmentation ############################################################
-        print("Getting Instance Seg")
-        net_i = net_e.to(device)
-        if(params_t.debug is False):
-            final_fibers = net_i.forward_inference(mini_V.to(device), final_pred.to(device), params_t)
-        else:
-            final_fibers = net_i.forward_inference(mini_V.to(device), final_pred.to(device), params_t, mini_M)
-
-    seg_precision, seg_recall, seg_f1 = evaluation.evaluate_segmentation(final_pred.cpu(), mini_M.cpu())
-    ins_precision, ins_recall, ins_f1 = evaluation.evaluate_iou(final_fibers.cpu().numpy(), mini_M.cpu().numpy(), params_t)
-    # seg_f1 = seg_f1.item()
-    seg_f1 = 0
-    ins_f1 = 0
-
-    print("FINISHED TESTING")
-    if(params_t.debug):
-        return mini_V, final_pred, final_fibers, final_clusters, mini_M, seg_f1, ins_f1
-    else:
-        return mini_V, final_pred, final_fibers, mini_M, seg_f1, ins_f1

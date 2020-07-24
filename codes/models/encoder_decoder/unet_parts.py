@@ -8,7 +8,7 @@ class double_conv(nn.Module):
     def __init__(self, in_ch, out_ch):
         super(double_conv, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv3d(in_ch, out_ch, 3, padding=1),
+            nn.Conv3d(in_channels=in_ch, out_channels=out_ch, kernel_size=3, padding=1),
             nn.BatchNorm3d(out_ch),
             nn.ReLU(inplace=True),
             nn.Conv3d(out_ch, out_ch, 3, padding=1),
@@ -71,3 +71,9 @@ class inconv(nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return x
+
+if __name__ == '__main__':
+    a = torch.zeros(1, 1, 64, 64, 64)
+    conv = nn.Conv3d(in_channels=1, out_channels=3, kernel_size=5, stride=1, padding=1, dilation=2, padding_mode='zeros')
+    print(a.shape)
+    print(conv(a).shape)

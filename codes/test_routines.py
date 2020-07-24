@@ -1,5 +1,6 @@
 import codes.utils.evaluation as evaluation
 import codes.utils.tensors_io as tensors_io
+from codes.utils.geometry import get_angle_w
 import torch.nn as nn
 import numpy as np
 import time
@@ -7,40 +8,13 @@ import torch
 import scipy.ndimage as ndi
 import os
 from scipy import ndimage as ndi
+from skimage.morphology import watershed
+from collections import defaultdict
 
 
 #################################################################################################################
 # Semantic Segmentation
 #################################################################################################################
-def test_segmentation(params_t, data_path, mask_path=None):
-    print("Starting testing instance for " + params_t.network_name + " in device " + str(t_params.device))
-    if(params_t.device is None):
-        device = torch.device("cuda:0")
-
-    net_s = params_t.net
-    net_s.load_state_dict(torch.load(params_t.net_weights_dir[0]))
-
-    if(params_t.uint_16 is False):
-        data_volume = tensors_io.load_volume(data_path, scale=params_t.scale_p).unsqueeze(0)
-    else:
-        data_volume = tensors_io.load_fibers_uint16(data_path, scale=params_t.scale_p).unsqueeze(0)
-
-    if(params_t.cleaning is True):
-        data_volume, mu, std = tensors_io.normalize_dataset_w_info(data_volume)
-
-    result = get_only_segmentation(net_s, data_volume, params_t.n_classes, params_t.cube_size, device=device)
-
-    if(mask_path is not None):
-        mask_volume = tensors_io.load_volume_uint16(mask_path, scale=params_t.scale_p).long().unsqueeze(0)
-        precision, recall, f1 = evaluation.evaluate_segmentation(result.cpu(), mask_volume.cpu())
-    else:
-        precision = 0
-        recall = 0
-        f1 = 0
-
-    return ((data_volume * std) + mu), result, precision, recall, f1
-
-
 def get_only_segmentation(net_s, data_volume, n_classes, cube_size, device=None):
     if(device is None):
         device = data_volume.device
@@ -112,52 +86,14 @@ def test_net_one_pass_segmentation(net, data_volume, final_probs, n_classes=2, c
 
 
 #################################################################################################################
-# Instance Segmentation
+# Instance Segmentation Helper Functions
 #################################################################################################################
-
-def test_semantic_w_instance(params_t, data_path, mask_path=None):
-    print("Starting testing Instance for " + params_t.network_name)
-    print("~~~~Using GPU~~~~")
-
-    device = params_t.device
-
-    net_s.load_state_dict(torch.load(params_t.net_weights_dir[0]))
-    net_e.load_state_dict(torch.load(params_t.net_weights_dir[1]))
-
-    if(mask_path is not None):
-        masks = tensors_io.load_volume_uint16(mask_path, scale=scale_p).long().unsqueeze(0)
-        print("MASKS CONTAINS: {} unique fibers".format(len(torch.unique(masks))))
-
-    if(params_t.uint_16 is False):
-        data_volume = tensors_io.load_volume(data_path, scale=params_t.scale_p).unsqueeze(0)
-    else:
-        data_volume = tensors_io.load_fibers_uint16(data_path, scale=params_t.scale_p).unsqueeze(0)
-
-    if(params_t.cleaning is True):
-        data_volume, mu, std = tensors_io.normalize_dataset_w_info(data_volume)
-
-    final_fibers = torch.zeros((batch_size, 1, rows, cols, depth), requires_grad=False, dtype=torch.long)
-
-    # ###############################################Semantic Segmentation ############################################################
-    final_pred = get_only_segmentation(params_t.net.to(device), data_volume.to(device), params_t.n_classes, params_t.cube_size)
-    if(mask_path is not None):
-        precision, recall, f1 = evaluation.evaluate_segmentation(final_pred.cpu(), mask_volume.cpu())
-
-    # ################################################Intance Segmentation ############################################################
-    start = time.time()
-    (final_fibers, _, volume_fibers) = test_net_one_pass_embedding(params_t, data_volume, final_fibers, final_pred)
-    print("Embedding took {}".format(time.time() - start))
-    ###################################################################################################################################
-
-    if(mask_path is not None):
-        evaluate_results.evaluate_fiber_detection(final_fibers, masks)
-    print("FINISHED TESTING")
-    return final_fibers
-
-
-def test_net_one_pass_embedding(params_t, data_volume, final_fibers, final_pred):
+def test_net_one_pass_embedding(params_t, data_volume, final_fibers, final_pred, masks):
+    import time
     device = params_t.device
     cube_size = params_t.cube_size
+
+    _, _, rows, cols, depth = final_fibers.shape
 
     overlap = int((1 - params_t.percent_overlap) * cube_size)
 
@@ -182,39 +118,59 @@ def test_net_one_pass_embedding(params_t, data_volume, final_fibers, final_pred)
         st = st + overlap
     starting_points_z.append(depth - cube_size)
 
-    net_e = params_t.net_i.to(device)
-    net_e.eval()
+    if(params_t.net_i is None):
+        net_i = params_t.net.to(device)
+    else:
+        net_i = params_t.net_i.to(device)
+    net_i.eval()
 
     final_fibers = final_fibers.to(device)
     counter = 0
+    total_fibers = 0
     total_volumes = len(starting_points_x) * len(starting_points_y) * len(starting_points_z)
+    volume_counter = 0
     with torch.no_grad():
+        print("Total Iterations: {}".format(len(starting_points_z) * len(starting_points_y) * len(starting_points_x)))
         for lb_z in starting_points_z:
             for lb_y in starting_points_y:
                 for lb_x in starting_points_x:
                     torch.cuda.empty_cache()
-                    counter = counter + 1
                     (mini_V, mini_M) = tensors_io.full_crop_3D_image_batched(data_volume, final_pred, lb_x, lb_y, lb_z, params_t.cube_size)
                     mini_M = mini_M.long().to(device)
                     mini_V = mini_V.to(device)
 
-                    space_labels = net_e.forward_inference(mini_V, mini_M, params_t)
-                    merge_outputs = merge_volume_vector(final_fibers[0, 0, lb_x:lb_x + cube_size, lb_y:lb_y + cube_size, lb_z:lb_z + cube_size], space_labels.to(device))
+                    start = time.time()
+
+                    if(params_t.net_i is None):
+                        if(params_t.debug):
+                            space_pred, space_labels, final_clusters = net_i.forward_inference(mini_V, params_t, mini_M)
+                        else:
+                            space_pred, space_labels = net_i.forward_inference(mini_V, params_t, mini_M)
+                    else:
+                        if(params_t.debug_cluster_unet_double is False):
+                            space_labels = net_i.forward_inference(mini_V, mini_M, params_t)
+                        else:
+                            space_labels, marks = net_i.forward_inference(mini_V, mini_M, params_t)
+
+                    if(space_labels is None):
+                        continue
+                    merge_outputs, total_fibers = merge_volume(final_fibers[0, 0, lb_x:lb_x + cube_size, lb_y:lb_y + cube_size, lb_z:lb_z + cube_size], space_labels[0, 0, ...].to(device), total_fibers)
+
                     final_fibers[0, 0, lb_x:lb_x + cube_size, lb_y:lb_y + cube_size, lb_z:lb_z + cube_size] = merge_outputs
+                    volume_counter += 1
+                    # if((volume_counter + 1) % 50 == 0):
+                    #    tensors_io.save_subvolume_instances((data_volume * params_t.std_d) + params_t.mu_d, (final_fibers), "total_volume")
+                    #    tensors_io.save_volume_h5(final_fibers[0, 0, ...].cpu().numpy(), name='Volume', directory='./h5_files')
     torch.cuda.empty_cache()
     return final_fibers
 
 
-def merge_volume(Vol_a, Vol_b):
+def merge_volume(Vol_a, Vol_b, total_fibers=0):
     added_ids_b = set()
-
-    update_in_a = {}
-
-    new_id_map = {}
-    new_angle_id = {}
+    added_ids_a = set()
+    new_id_map = defaultdict(list)
     result = Vol_a * Vol_b
     overlapping_indices = result.nonzero()
-
     merged_fibers = 0
     # If there are overlping indices
     if(len(overlapping_indices) > 0):
@@ -226,81 +182,150 @@ def merge_volume(Vol_a, Vol_b):
             # Find indices in Va that overlap
             idx1 = (Vol_a == fiber_id_a).nonzero().split(1, dim=1)
 
-            # Find which ids in Volb coincide with the one sin VolB
+            # Find which ids in Volb coincide with the ones in VolB
             ids_in_b = torch.unique(Vol_b[idx1])
             for fiber_id_b in ids_in_b:
                 fiber_id_b = fiber_id_b.item()
                 if(fiber_id_b == 0 or fiber_id_b == 1):
                     continue
-                # Get the fiber information
-                f_a = dict_ids[fiber_id_a.item()]
-                f_b = new_list_ids[fiber_id_b]
-                # Merge fibers based on angles
-                if(True):
-                    # If a fiber in B was detected as two fibers in A
-                    if(fiber_id_b in added_ids_b):
-                            new_id_map[fiber_id_b] = fiber_id_a
-                            new_angle_id[fiber_id_b] = angle
-                            update_in_a[fiber_id_a.item()] = new_id_map[fiber_id_b]
-                    else:
-                        #  Change fiber id
-                        new_id_map[fiber_id_b] = fiber_id_a
-                        new_angle_id[fiber_id_b] = angle_between_a_b(f_a, f_b)
-                        merged_fibers = merged_fibers + 1
+                # Change fiber id 
+                new_id_map[fiber_id_b].append(fiber_id_a)
+                # Add to merged fibers
+                added_ids_b.add(fiber_id_b)
 
-                        # Add to merged fibers
-                        added_ids_b.add(fiber_id_b)
+    # Update volume A and fibers dictionary 
+    new_fiber_id = total_fibers + 1
+    ids_in_vol_b = torch.unique(Vol_b)
+    # for each fiber in the new list
+    for fid_b in ids_in_vol_b:
+        if(fid_b.item() == 0 or fid_b.item() == 1):
+            continue
+        idxb = (Vol_b == fid_b).nonzero()
+        # variables to find best candidate
+        best_candidate = -1
+        max_volume = -1000
+        temp_vol = torch.zeros_like(Vol_a)
+        temp_vol[idxb.split(1, dim=1)] = 1
+        # check if the fiber is to be merged
+        if(fid_b.item() in added_ids_b):
+            # check which candidate in a is best fit according to angle difference and delta 10 degrees
+            if(len(new_id_map[fid_b.item()]) > 1):
+                for fid_a in new_id_map[fid_b.item()]:
+                    idxa = (Vol_a == fid_a).nonzero()
+                    overlap = temp_vol[idxa.split(1, dim=1)].sum()
 
-        if(old_fiber_id not in added_ids_b):
-            # Look where Vol_b was the old id and update Vol_a
-            idxb = (Vol_b == old_fiber_id).nonzero().split(1, dim=1)
-            Vol_a[idxb] = new_fiber_id
-        # if fiber is to merge with a fiber in Vol_a
+                    # Find the volume that overlaps the most
+                    if(overlap > max_volume):
+                        best_candidate = fid_a
+                        max_volume = overlap
+            else:
+                best_candidate = new_id_map[fid_b.item()][0]
+
+        if(best_candidate > 0):
+            # if a good match was found
+            Vol_a[idxb.split(1, dim=1)] = best_candidate
         else:
-            idxb = (Vol_b == old_fiber_id).nonzero().split(1, dim=1)
-            Vol_a[idxb] = new_id_map[old_fiber_id]
+            # if it is a brand new fiber
+            Vol_a[idxb.split(1, dim=1)] = new_fiber_id
+            new_fiber_id += 1
 
-    return Vol_a
+    return (Vol_a, new_fiber_id - 1)
 
 
 #################################################################################################################
-# Quick Test
+# Instance Segmentation
 #################################################################################################################
-def quick_seg_inst_test(params_t, data_path, mask_path=None, start_point=[100, 100, 50]):
+
+def test_semantic_w_instance(params_t, length=-1):
     print("Starting testing Quick Semantic and Instance for " + params_t.network_name + " in device " + str(params_t.device))
     print("~~~~Using GPU~~~~")
 
     device = params_t.device
+    data_volume, masks, V_or = tensors_io.load_data_and_masks(params_t)
 
-    if(params_t.uint_16 is False):
-        data_volume = tensors_io.load_volume(data_path, scale=params_t.scale_p).unsqueeze(0)
-    else:
-        data_volume = tensors_io.load_fibers_uint16(data_path, scale=params_t.scale_p).unsqueeze(0)
+    if(params_t.dataset_name == "2016_s"):
+        data_volume = data_volume[:, :, 60:, 42:, 70:]
+        masks = masks[:, :, 60:, 42:, 70:]
 
-    if(mask_path is not None):
-        masks = tensors_io.load_volume_uint16(mask_path, scale=params_t.scale_p).long().unsqueeze(0)
-        print("MASKS CONTAINS: {} unique fiber(s)".format(len(torch.unique(masks)) - 1))
+    if(params_t.dataset_name == "AFRL"):
+        data_volume = data_volume[:, :, :, 60:, :]
+
+    '''
+    if(length > 32):
+        data_volume = data_volume[:, :, 0:length, 0:length, 0:length]
+        if(masks is not None):
+            masks = masks[:, :, 0:length, 0:length, 0:length]
+        if(V_or is not None):
+            V_or = V_or[:, :, 0:length, 0:length, 0:length]
+    '''
+    #tensors_io.save_subvolume_instances((data_volume * params_t.std_d) + params_t.mu_d, masks * 0, 'medium_vols')
+    #exit()
+
+    _, _, rows, cols, depth = data_volume.shape
+    final_fibers = torch.zeros((params_t.batch_size, 1, rows, cols, depth), requires_grad=False, dtype=torch.long)
+
+    if(params_t.net_i is not None):
+        # ###############################################Semantic Segmentation ############################################################
+        final_pred = get_only_segmentation(params_t.net.to(device), data_volume.to(device), params_t.n_classes, params_t.cube_size)
+        if(params_t.dataset_name == "AFRL"):
+            final_pred = (((data_volume * params_t.std_d) + params_t.mu_d) > 0.65).long()
+
+        if(params_t.dataset_name == "voids"):
+            # tensors_io.save_subvolume_instances((data_volume * params_t.std_d) + params_t.mu_d, final_pred, "test_voids")
+            final_pred = final_pred[..., 0:75]
+            masks = masks[..., 0:75]
+            data_volume = data_volume[..., 0:75]
+            seg_eval1 = evaluation.evaluate_segmentation(final_pred.cpu(), masks.cpu(), n_class=1)
+            seg_eval2 = evaluation.evaluate_segmentation(final_pred.cpu(), masks.cpu(), n_class=2)
+            params_t.save_quick_results((data_volume * params_t.std_d) + params_t.mu_d, final_pred, final_pred, masks, seg_eval1, seg_eval2)
+            exit()
+        # ################################################Intance Segmentation ############################################################
     else:
-        masks = torch.zeros(data_volume.shape).long()
-    if(params_t.cleaning_sangids is True):
-        (mini_V, mini_M) = tensors_io.full_crop_3D_image_batched(data_volume, masks, start_point[0], start_point[1], start_point[2], (params_t.cube_size))
-        mini_V_or = mini_V.clone()
-        data_volume[0, 0, ...] = tensors_io.clean_noise(data_volume[0, 0, ...])
+        final_pred = torch.zeros(final_fibers.shape).long()
+
+    final_fibers = test_net_one_pass_embedding(params_t, data_volume.to(device), final_fibers, final_pred, masks)
+    ###################################################################################################################################
+
+    if(params_t.testing_mask is not None and False):
+        seg_eval = evaluation.evaluate_segmentation(final_pred.cpu(), masks.cpu())
+        inst_eval = evaluation.evaluate_iou(final_fibers.cpu().numpy(), masks.cpu().numpy(), params_t)
+        print(evaluation.evaluate_adjusted_rand_index_torch(final_fibers.to(device), masks.to(device)))
+    else:
+        seg_eval = [1, 1, 1]
+        inst_eval = [1, 1, 1]
 
     if(params_t.cleaning is True):
-        data_volume, mu, std = tensors_io.normalize_dataset_w_info(data_volume)
-        params_t.mu_d = mu
-        params_t.std_d = std
-    else:
-        mu = 0
-        std = 1
+        data_volume = (data_volume * params_t.std_d) + params_t.mu_d
+
+    if(params_t.cleaning_sangids is True):
+        data_volume = V_or
+
+    print("FINISHED TESTING")
+    return data_volume, final_pred, final_fibers, masks, seg_eval, inst_eval
+
+#################################################################################################################
+# Quick Test
+#################################################################################################################
+def quick_seg_inst_test(params_t, start_point=[0, 0, 0]):
+    print("Starting testing Quick Semantic and Instance for " + params_t.network_name + " in device " + str(params_t.device))
+    print("Window Size: {}. N Classes: {} N Embeddings: {} N Dim{}".format(params_t.cube_size, params_t.n_classes, params_t.n_embeddings, params_t.ndims))
+    print("eps: {}. min_points: {}".format(params_t.eps_param, params_t.min_samples_param))
+    print("For dataset " + params_t.dataset_name + " version " + str(params_t.dataset_version))
+    print("~~~~Using GPU~~~~")
+
+    device = params_t.device
+    data_volume, masks, V_or = tensors_io.load_data_and_masks(params_t)
+
+    if(params_t.cleaning_sangids is True):
+        (mini_V_or, mini_M) = tensors_io.full_crop_3D_image_batched(V_or, masks, start_point[0], start_point[1], start_point[2], (params_t.cube_size))
 
     print("Cropping Mini Volume and Mask")
     max_fibers = 0
     while(max_fibers < 2):
-        print("Cropping at", start_point)
+        print("Testing Cropping at", start_point)
         (mini_V, mini_M) = tensors_io.full_crop_3D_image_batched(data_volume, masks, start_point[0], start_point[1], start_point[2], (params_t.cube_size))
-        if(mask_path is not None):
+        start_point = [(1 + int(np.random.rand(1, 1) * (masks.shape[i + 2] - 2))) for i in range(3)]
+        if(params_t.testing_mask is not None):
             max_fibers = len(torch.unique(mini_M))
         else:
             max_fibers = 100
@@ -308,10 +333,6 @@ def quick_seg_inst_test(params_t, data_path, mask_path=None, start_point=[100, 1
     if(params_t.net_i is None):
         # ######################################## Semantic and Instance Ensemble ###########################################
         net = params_t.net
-        if(params_t.device == torch.device('cuda:0')):
-            net.load_state_dict(torch.load(params_t.net_weights_dir[0], map_location='cuda:0'))
-        else:
-            net.load_state_dict(torch.load(params_t.net_weights_dir[0], map_location='cuda:1'))
         net = net.to(device)
         if(params_t.debug):
             final_pred, final_fibers, final_clusters = net.forward_inference(mini_V.to(device), params_t, mini_M)
@@ -321,31 +342,44 @@ def quick_seg_inst_test(params_t, data_path, mask_path=None, start_point=[100, 1
         net_s = params_t.net
         net_e = params_t.net_i
 
-        if(params_t.device == torch.device('cuda:0')):
-            net_s.load_state_dict(torch.load(params_t.net_weights_dir[0], map_location='cuda:0'))
-            net_e.load_state_dict(torch.load(params_t.net_weights_dir[1], map_location='cuda:0'))
-        else:
-            net_s.load_state_dict(torch.load(params_t.net_weights_dir[0], map_location='cuda:1'))
-            net_e.load_state_dict(torch.load(params_t.net_weights_dir[1], map_location='cuda:1'))
         # ###############################################Semantic Segmentation ############################################################
         print("Getting Semantic Seg")
         final_pred = get_only_segmentation(net_s.to(device), mini_V.to(device), params_t.n_classes, params_t.cube_size)
+
+
+        if(params_t.dataset_name == "voids"):
+            # tensors_io.save_subvolume_instances((data_volume * params_t.std_d) + params_t.mu_d, final_pred, "test_voids")
+            print(final_pred.shape)
+            final_pred = final_pred[:, :, 0:64, 0:64, 0:64]
+            mini_V = (final_pred * 0).float()
+            masks = final_pred * 0;
+            params_t.save_quick_results((mini_V * params_t.std_d) + params_t.mu_d, final_pred, final_pred, masks, [1, 1, 1], [1, 1, 1])
+            exit()
+
+
         # ################################################Intance Segmentation ############################################################
         print("Getting Instance Seg")
         net_i = net_e.to(device)
         if(params_t.debug):
-            final_fibers = net_i.forward_inference(mini_V.to(device), final_pred.to(device), params_t, mini_M)
+            final_fibers, final_clusters = net_i.forward_inference(mini_V.to(device), final_pred.to(device), params_t, mini_M)
         else:
             final_fibers = net_i.forward_inference(mini_V.to(device), final_pred.to(device), params_t)
 
-    mini_V = (mini_V * std) + mu
+    mini_V = (mini_V * params_t.std_d) + params_t.mu_d
 
-    if(mask_path is not None):
+    # final_fibers = refine_watershed(final_fibers, final_pred, dbscan=True)
+    if(params_t.testing_mask is not None):
         seg_eval = evaluation.evaluate_segmentation(final_pred.cpu(), mini_M.cpu())
-        inst_eval = evaluation.evaluate_iou(final_fibers.cpu().numpy(), mini_M.cpu().numpy(), params_t)
+        # inst_eval = evaluation.evaluate_iou(final_fibers.cpu().numpy(), mini_M.cpu().numpy(), params_t)
+        inst_eval = evaluation.evaluate_iou_pixelwise(final_fibers.cpu().numpy(), mini_M.cpu().numpy(), params_t)
+        inst_eval_object_wise = evaluation.evaluate_iou(final_fibers.cpu().numpy(), mini_M.cpu().numpy(), params_t)
+
+        Ra = evaluation.evaluate_adjusted_rand_index_torch(final_fibers.to(device), mini_M.to(device))
     else:
         seg_eval = [1, 1, 1]
         inst_eval = [1, 1, 1]
+        inst_eval_object_wise = [1, 1, 1]
+        Ra = 1
         mini_M = mini_M * 0
 
     if(params_t.cleaning_sangids is False):
@@ -353,6 +387,24 @@ def quick_seg_inst_test(params_t, data_path, mask_path=None, start_point=[100, 1
 
     print("FINISHED TESTING")
     if(params_t.debug):
-        return mini_V_or, final_pred, final_fibers, final_clusters, mini_M, seg_eval, inst_eval
+        return mini_V_or, final_pred, final_fibers, final_clusters, mini_M, seg_eval, inst_eval, inst_eval_object_wise, Ra
     else:
-        return mini_V_or, final_pred, final_fibers, mini_M, seg_eval, inst_eval
+        return mini_V_or, final_pred, final_fibers, mini_M, seg_eval, inst_eval, inst_eval_object_wise, Ra
+
+
+def refine_watershed(labels, mask, dbscan=False):
+    device = labels.device
+    labels = labels[0, 0, ...].cpu().numpy()
+    print("Regining Watershed")
+    markers = np.copy(labels)
+    markers[np.where(labels == 1)] = 0
+
+    distance = ndi.distance_transform_edt(mask[0, 0, ...].cpu().numpy())
+    # distance[np.where(labels > 1)] = 1
+
+    labels = watershed(-distance, markers, mask=mask[0, 0, ...].cpu().numpy())
+
+    labels = torch.from_numpy(labels).long().to(device).unsqueeze(0).unsqueeze(0)
+
+    return labels
+
