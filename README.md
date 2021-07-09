@@ -1,5 +1,7 @@
 # 3D-Fiber-Segmentation Using Centroid Regression
-
+| Input | Output |
+| :--: | :--: |
+|<img src="info_files/seg_vol.png">| <img src="info_files/seg_vol2.png">|
 ## Setup
 1.  Download dictionary [here](https://1drv.ms/u/s!ArkbR4HWOOHqgfpSTdFkpiw384ZAug?e=3cuBGb) and place it under new folder 'info_files/'
 2. Install libraries from 'requirements.txt'
