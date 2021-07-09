@@ -1,16 +1,6 @@
-try:
-    from geometry import fit, point_line_distance, get_spatial_properties, point_line_distance_torch, get_ref_angle
-    from mpp import Tube
-    from rjmcmc import parameters as mpp_pam
-    from rjmcmc import rj_mcmc
-    import tensors_io
-except:
-    from .geometry import fit, point_line_distance, get_spatial_properties, point_line_distance_torch, get_ref_angle
-    from .mpp import Tube
-    from .rjmcmc import parameters as mpp_pam
-    from .rjmcmc import rj_mcmc
-    import codes.utils.tensors_io as tensors_io
-import numpy as np
+from .geometry import fit, point_line_distance, get_spatial_properties, point_line_distance_torch, get_ref_angle
+from .mpp import Tube
+import codes.utils.tensors_io as tensors_io
 import torch
 
 from sklearn.cluster import DBSCAN

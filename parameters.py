@@ -1,7 +1,7 @@
 from codes.models.fcn_tomasz.RNet_model import RNet_model as RNet
 from codes.models.encoder_decoder.unet_double import UNet_double
 from codes.models.encoder_decoder.unet_single import UNet
-from codes.models.DeepLabV3.deeplabv3_3d import DeepLabV3_Single
+# from codes.models.DeepLabV3.deeplabv3_3d import DeepLabV3_Single
 import codes.utils.loss_functions as loss_fns
 import codes.utils.tensors_io as tensors_io
 from sklearn.cluster import DBSCAN  # , OPTICS
@@ -94,8 +94,9 @@ class training_parameters:
             self.net = RNet(self.intput_channels, self.n_classes, self.ndims)
             self.net_i = RNet(self.intput_channels, self.n_embeddings, self.ndims)
         elif(self.network_name == "dlv3_net"):
-            self.net = DeepLabV3_Single(self.intput_channels, self.n_classes)
-            self.net_i = DeepLabV3_Single(self.intput_channels, self.n_embeddings)
+            # self.net = DeepLabV3_Single(self.intput_channels, self.n_classes)
+            # self.net_i = DeepLabV3_Single(self.intput_channels, self.n_embeddings)
+            print("pass")
         elif(self.network_name == "unet_double"):
             self.net = UNet_double(self.intput_channels, self.n_classes, self.n_embeddings, self.ndims)
             self.net_i = None
@@ -144,17 +145,17 @@ class training_parameters:
         self.debug_display_cluster = True
         self.save_side = args.save_side
         # Network weights IO
-        self.device = torch.device("cuda:" + str(args.device))
+        self.device = torch.device("cuda:" + str(args.device) if torch.cuda.is_available() else "cpu")
 
         if(args.pre_trained or args.mode == "test" or args.mode == "quick" or args.mode == "batch" or args.mode == "custom"):
             print("Loading pre-trained-weights")
             print("at {}".format(self.net_weights_dir[0]))
             try:
-                self.net.load_state_dict(torch.load(self.net_weights_dir[0], map_location='cuda:' + str(args.device)))
+                self.net.load_state_dict(torch.load(self.net_weights_dir[0], map_location=('cuda:' + str(args.device) if torch.cuda.is_available() else "cpu")))
                 if(self.net_i is not None):
                     print("Loading pre-trained-weights")
                     print("at {}".format(self.net_weights_dir[1]))
-                    self.net_i.load_state_dict(torch.load(self.net_weights_dir[1], map_location='cuda:' + str(args.device)))
+                    self.net_i.load_state_dict(torch.load(self.net_weights_dir[1], map_location=('cuda:' + str(args.device) if torch.cuda.is_available() else "cpu")))
             except:
                 print("~~~~~~~~~~~~~~~~~Weights not found~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
                 print("~~~~~~~~~~~~~~~~~Weights not found~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
@@ -468,8 +469,8 @@ def dataset_specific_parameters(args):
         else:
             args.training_dir = ["/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p"]
             args.training_masks = ["/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p_anno"]
-            args.testing_dir = "/pub2/aguilarh/DATASETS/Tomasz/2016_s/5.38/HR/HR_5.38p"  # "/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p"
-            args.testing_mask = "/pub2/aguilarh/DATASETS/Tomasz/2016_s/5.38/HR/HR_5.38p_anno"  # "/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p_anno"
+            args.testing_dir = "HR_5.38p"  # "/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p"
+            args.testing_mask = "HR_5.38p_anno"  # "/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p_anno"
 
     elif(args.dataset_name == "AFRL"):
         args.return_marks = True
