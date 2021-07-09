@@ -337,7 +337,6 @@ def parse_arguments(network_list, datasets):
 
     args = parser.parse_args()
 
-
     if(args.mode == "train"):
         if(args.dataset_number > 0):
             args.train_dataset_number = args.dataset_number
@@ -388,64 +387,10 @@ def dataset_specific_parameters(args):
     args.mpp_curvature = 2
 
     args.mpp_T_ov = 0.2
-    ##################  object parameters  ##################
 
+    ##################  object parameters  ##################
     if(args.debug_cluster == 1):
         args.debug = 1
-
-    if(args.dataset_name == "voids"):
-        args.uint16 = False
-        args.scale_p = 2
-        args.cleaning_sangids = True
-        args.cleaning = False
-
-        args.mpp_min_r = 1.9
-        args.mpp_max_r = 2
-
-        if(args.dataset_version == 0):
-            #start_point = [0, 0, 40]
-            args.start_point = [100, 100, 0]
-        elif(args.dataset_version == 1):
-            args.start_point = [64, 64, 40]
-        else:
-            args.start_point = [128, 128, 40]
-
-        if(torch.cuda.device_count() == 1):
-            args.training_dir = ["/Storage/DATASETS/Fibers/labeled_voids_fibers/originals"]
-            args.training_masks = ["/Storage/DATASETS/Fibers/labeled_voids_fibers/transformed"]
-            args.testing_dir = "/Storage/DATASETS/Fibers/LABELED_IMAD/original"  # "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_s/5.35/HR/HR_5.35p"
-            args.testing_mask = "/Storage/DATASETS/Fibers/LABELED_IMAD/fibers_n_voids"  # "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_s/5.35/HR/HR_5.35p_anno"
-        else:
-            args.training_dir = ["/pub2/aguilarh/DATASETS/Sangid_s_data_w_results/labeled_voids_fibers/originals"]
-            args.training_masks = ["/pub2/aguilarh/DATASETS/Sangid_s_data_w_results/labeled_voids_fibers/transformed"]
-            args.testing_dir = "/pub2/aguilarh/DATASETS/Sangid_s_data_w_results/original"  # "/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p"
-            args.testing_mask = "/pub2/aguilarh/DATASETS/Sangid_s_data_w_results/fibers_n_voids"
-
-    if(args.dataset_name == "2016_r"):
-        args.uint16 = True
-        args.scale_p = 1
-
-        args.mpp_min_r = 1.9
-        args.mpp_max_r = 2
-
-        if(args.dataset_version == 0):
-            #start_point = [0, 0, 40]
-            args.start_point = [100, 100, 50]
-        elif(args.dataset_version == 1):
-            args.start_point = [64, 64, 40]
-        else:
-            args.start_point = [128, 128, 40]
-
-        if(torch.cuda.device_count() == 1):
-            args.training_dir = ["/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_r/HR3_1/HR3_1"]
-            args.training_masks = ["/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_r/HR3_1/HR3_1_anno"]
-            args.testing_dir = "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_r/HR3_1/HR3_2"  # "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_s/5.35/HR/HR_5.35p"
-            args.testing_mask = "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_r/HR3_1/HR3_2_anno"  # "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_s/5.35/HR/HR_5.35p_anno"
-        else:
-            args.training_dir = ["/pub2/aguilarh/DATASETS/Tomasz/HR3_1"]
-            args.training_masks = ["/pub2/aguilarh/DATASETS/Tomasz/HR3_1_anno"]
-            args.testing_dir = "/pub2/aguilarh/DATASETS/Tomasz/HR3_2"  # "/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p"
-            args.testing_mask = "/pub2/aguilarh/DATASETS/Tomasz/HR3_2_anno"  # "/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p_anno"
 
     if(args.dataset_name == "2016_s"):
         args.uint16 = True
@@ -454,110 +399,16 @@ def dataset_specific_parameters(args):
         args.mpp_max_r = 2
 
         if(args.dataset_version == 0):
-            #start_point = [0, 0, 40]
+            # start_point = [0, 0, 40]
             args.start_point = [100, 100, 100]
         elif(args.dataset_version == 1):
             args.start_point = [64, 64, 100]
         else:
             args.start_point = [128, 128, 100]
 
-        if(torch.cuda.device_count() == 1):
-            args.training_dir = ["/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_s/5.35/HR/HR_5.35p"]
-            args.training_masks = ["/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_s/5.35/HR/HR_5.35p_anno"]
-            args.testing_dir = "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_s/5.38/HR/HR_5.38p"  # "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_s/5.35/HR/HR_5.35p"
-            args.testing_mask = "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_s/5.38/HR/HR_5.38p_anno"  # "/Storage/DATASETS/Fibers/Tomas/labeled_fibers/2016_s/5.35/HR/HR_5.35p_anno"
-        else:
-            args.training_dir = ["/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p"]
-            args.training_masks = ["/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p_anno"]
-            args.testing_dir = "HR_5.38p"  # "/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p"
-            args.testing_mask = "HR_5.38p_anno"  # "/pub2/aguilarh/DATASETS/Tomasz/HR_5.35p_anno"
-
-    elif(args.dataset_name == "AFRL"):
-        args.return_marks = True
-        args.mpp_T_ov = 0.05
-        args.Vo_t = 0.7
-        args.uint16 = False
-        args.scale_p = 2
-        args.save_side = True
-        if(args.dataset_version == 0):
-            args.start_point = [100, 100, 50]
-            #args.start_point = [0, 0, 0]
-        elif(args.dataset_version == 1):
-            args.start_point = [100, 100, 50]
-        else:
-            args.start_point = [200, 200, 200]
-
-        if(torch.cuda.device_count() == 1):
-            args.testing_dir = "/Storage/DATASETS/GLOBUS/Fibers_voids2/recon_20141209_235811_127_1_InSituPyro_curedRT_HC_7_enhcont_cropped"
-            args.testing_mask = None
-        else:
-            args.testing_dir = '/pub2/aguilarh/DATASETS/recon_20141209_235811_127_1_InSituPyro_curedRT_HC_7_enhcont_cropped'
-            args.testing_mask = None
-
-
-        args.mpp_min_r = 3
-        args.mpp_max_r = 5
-
-        args.mpp_min_l = 50
-        args.mpp_max_l = 70
-
-        args.mpp_min_t = 0
-        args.mpp_max_t = 180
-
-        args.mpp_min_p = 0
-        args.mpp_max_p = 180
-
-    elif(args.dataset_name == "Sangids"):
-        args.Vo_t = 0.60
-        args.labels_in_h5 = True
-        args.save_side = True
-        args.uint16 = False
-        args.scale_p = 2
-        if(args.dataset_version == 0):
-            args.start_point = [100, 100, 50]
-            #args.start_point = [0, 0, 0]
-        elif(args.dataset_version == 1):
-            args.start_point = [100, 100, 0]
-        else:
-            args.start_point = [200, 200, 200]
-
-        args.cleaning_sangids = True
-        args.cleaning = True
-        if(args.network == 1):
-            args.cleaning = False
-
-        if(torch.cuda.device_count() == 2):
-            args.training_dir = ["/pub2/aguilarh/DATASETS/Sangid_s_data_w_results/NewTrainData_Sep9/sV1/data", "/pub2/aguilarh/DATASETS/Sangid_s_data_w_results/NewTrainData_Sep9/sV2/data"]
-            args.training_masks = ["/pub2/aguilarh/DATASETS/Sangid_s_data_w_results/NewTrainData_Sep9/sV1/fibers_uint16_sV1", "/pub2/aguilarh/DATASETS/Sangid_s_data_w_results/NewTrainData_Sep9/sV2/fibers_uint16_sV2"]
-            args.testing_dir = "/pub2/aguilarh/DATASETS/Sangid_s_data_w_results/original" # "/pub2/aguilarh/DATASETS/Sangid_s_data_w_results/NewTrainData_Sep9/sV3/data"
-            args.testing_mask = "/pub2/aguilarh/DATASETS/Sangid_s_data_w_results/fibers_only" #  "/pub2/aguilarh/DATASETS/Sangid_s_data_w_results/NewTrainData_Sep9/sV3/fibers_uint16_sV3"
-        else:
-            args.training_dir = ["/Storage/DATASETS/Fibers/NewTrainData_Sep9/subV1/data", "/Storage/DATASETS/Fibers/NewTrainData_Sep9/subV2/data"]
-            args.training_masks = ["/Storage/DATASETS/Fibers/NewTrainData_Sep9/subV1/fibers_uint16_sV1", "/Storage/DATASETS/Fibers/NewTrainData_Sep9/subV2/fibers_uint16_sV2"]
-            args.testing_dir = "/Storage/DATASETS/Fibers/LABELED_IMAD/original"
-            args.testing_mask = "/Storage/DATASETS/Fibers/LABELED_IMAD/fibers_only"
-    elif(args.dataset_name == "Nuclei"):
-        args.uint16 = False
-        args.scale_p = 1
-        args.start_point = [0, 0, 0]
-        args.cleaning_sangids = False
-        args.cleaning = True
-        args.training_dir = []
-        args.training_masks = []
-        if(torch.cuda.device_count() == 2):
-            data_path = "/pub2/aguilarh/DATASETS/DeepSynth/train_labeled_1/"
-            train_path = "/pub2/aguilarh/DATASETS/DeepSynth/train_labeled_1/"
-        else:
-            data_path = "/Storage/DATASETS/DeepSynth/DeepSynth_Software/Segmentation/train_data/train_wsm/train_labeled_1/"
-            train_path = "/Storage/DATASETS/DeepSynth/DeepSynth_Software/Segmentation/train_data/train_wsm/train_labeled_1/"
-        for i in range(30):
-            args.training_dir.append(data_path + str(i + 1) + "_og")
-            args.training_masks.append(train_path + str(i + 1) + "_gt")
-
-        args.testing_dir = "/Storage/DATASETS/DeepSynth/DeepSynth_Software/Segmentation/train_data/train_wsm/train_labeled_1/29_og"
-        args.testing_mask = "/Storage/DATASETS/DeepSynth/DeepSynth_Software/Segmentation/train_data/train_wsm/train_labeled_1/29_gt"
-
-    if(args.mode == "test"):
-        args.dataset_version = 5
+        args.training_dir = ["sample_volume"]
+        args.training_masks = ["sample_labels"]
+        args.testing_dir = "sample_volume"
+        args.testing_mask = "sample_labels"
 
     return args
