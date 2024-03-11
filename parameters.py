@@ -208,8 +208,6 @@ class training_parameters:
         file1.close()
 
     def save_quick_results(self, mini_volume, mini_seg, mini_inst, mini_gt, seg_eval, inst_eval, masks=None, final_clusters=None, results_directory="results", dataset_name="mini"):
-        if(self.not_so_big):
-            self.dataset_version = 4
         if(self.debug_cluster_unet_double):
             if(self.network_number == 4):
                 self.network_string = "METHOD"

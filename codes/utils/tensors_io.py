@@ -4,12 +4,15 @@ from PIL import Image
 import numpy as np
 import pickle
 import torch
+
 import h5py
+
 import os
 import matplotlib.pyplot as plt
 from skimage import exposure
 import scipy.ndimage as ndi
-from skimage.morphology import watershed, binary_erosion, ball
+
+# from skimage.morphology import watershed, binary_erosion, ball
 import random
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 
@@ -101,9 +104,9 @@ def load_full_volume(path, start=0, end=None, scale=2):
             im = np.asarray(im, np.uint16)
             # im = im[200:-311, 280:-231]
             im = im[260:1210, 1289:2239]
-            im = im.astype(np.float)
+            im = im.astype(float)
             im = im / 2**16
-            # im = im.astype(np.float)
+            # im = im.astype(float)
             im = torch.from_numpy(im).unsqueeze(0)
             im = im[:, ::scale, ::scale]
             V[:, :, :, countZ] = im
@@ -133,7 +136,7 @@ def load_full_volume_crop(path, sx, sy, sz, window_size):
             im = Image.open(path + '/' + name)
             im = np.asarray(im, np.uint16)
             im = im[200:-311, 280:-231]
-            im = im.astype(np.float)
+            im = im.astype(float)
             im = im / 2**16
             im = im[sx:sx + window_size, sy:sy + window_size]
             im = torch.from_numpy(im).unsqueeze(0)
@@ -167,9 +170,9 @@ def load_volume_uint16(path, start=0, end=None, scale=2):
         if name[-1] == 'f':
             im = Image.open(path + '/' + name)
             im = np.asarray(im, np.uint16)
-            im = im.astype(np.float)
+            im = im.astype(float)
             # im = im / 2**16
-            # im = im.astype(np.float)
+            # im = im.astype(float)
             im = torch.from_numpy(im).unsqueeze(0)
             im = im[:, ::scale, ::scale]
             V[:, :, :, countZ] = im
@@ -204,9 +207,9 @@ def load_fibers_uint16(path, start=0, end=None, scale=2):
         if name[-1] == 'f':
             im = Image.open(path + '/' + name)
             im = np.asarray(im, np.uint16)
-            im = im.astype(np.float)
+            im = im.astype(float)
             im = im / 2.0**16
-            # im = im.astype(np.float)
+            # im = im.astype(float)
             im = torch.from_numpy(im).unsqueeze(0)
             im = im[:, ::scale, ::scale]
             V[:, :, :, countZ] = im
@@ -1269,7 +1272,7 @@ def full_crop_3D_image_batched(img, mask, lb_x, lb_y, lb_z, crop_size):
 def create_histogram_ref_numpy(reference, name='info_files/histogram_transform/synthetic_data_histogram.npy'):
     # reference = reference.numpy()
     tmpl_values, tmpl_counts = np.unique(reference.ravel(), return_counts=True)
-    tmpl_quantiles = np.cumsum(tmpl_counts).astype(np.float) / (reference.size)
+    tmpl_quantiles = np.cumsum(tmpl_counts).astype(float) / (reference.size)
     print("Creating Reference...")
     reference_hist = [tmpl_values, tmpl_quantiles]
     np.save(name, reference_hist)
@@ -1279,7 +1282,7 @@ def create_histogram_ref_numpy(reference, name='info_files/histogram_transform/s
 def create_histogram_ref(reference):
     # reference = reference.numpy()
     tmpl_values, tmpl_counts = np.unique(reference.ravel(), return_counts=True)
-    tmpl_quantiles = np.cumsum(tmpl_counts).astype(np.float) / (reference.size)
+    tmpl_quantiles = np.cumsum(tmpl_counts).astype(float) / (reference.size)
     print("Creating Reference...")
     reference_hist = [tmpl_values, tmpl_quantiles]
     with open('info_files/histogram_reference.pickle', 'wb') as f:
@@ -1322,7 +1325,7 @@ def clean_noise_syn(vol, name='info_files/histogram_transform/synthetic_data_his
                                                                return_inverse=True,
                                                                return_counts=True)
 
-        src_quantiles = np.cumsum(src_counts).astype(np.float) / (source.size)
+        src_quantiles = np.cumsum(src_counts).astype(float) / (source.size)
         interp_a_values = np.interp(src_quantiles, tmpl_quantiles, tmpl_values)
         matched = interp_a_values[src_unique_indices].reshape(source.shape)
         clean_vol[..., i] = matched
@@ -1365,7 +1368,7 @@ def clean_noise(vol, data_path=None):
                                                                return_inverse=True,
                                                                return_counts=True)
 
-        src_quantiles = np.cumsum(src_counts).astype(np.float) / (source.size)
+        src_quantiles = np.cumsum(src_counts).astype(float) / (source.size)
         interp_a_values = np.interp(src_quantiles, tmpl_quantiles, tmpl_values)
         matched = interp_a_values[src_unique_indices].reshape(source.shape)
         clean_vol[..., i] = matched
@@ -1377,7 +1380,7 @@ def cylinder_filter(data_volume_shape, center=None, radius=None):
     grid = np.mgrid[[slice(i) for i in [rows, cols]]]
     grid = (grid.T - center).T
     phi = radius - np.sqrt(np.sum((grid)**2, 0))
-    res = (phi > 0).astype(np.float)
+    res = (phi > 0).astype(float)
     res = np.repeat(res[:, :, np.newaxis], slices , axis=2)
     return res
     

@@ -102,8 +102,8 @@ def evaluate_iou(Vf, Vgt, params_t=False):
             Vf_temp = np.zeros(Vgt.shape)
             Vf_temp[np.where(Vf == Lf)] = 1
 
-            intersection = np.logical_and(Vgt_temp, Vf_temp).sum().astype(np.float)
-            union = np.logical_or(Vgt_temp, Vf_temp).sum().astype(np.float)
+            intersection = np.logical_and(Vgt_temp, Vf_temp).sum().astype(float)
+            union = np.logical_or(Vgt_temp, Vf_temp).sum().astype(float)
 
             IOU = intersection / union
 
@@ -194,7 +194,7 @@ def evaluate_iou_pixelwise(Vf, Vgt, params_t=False):
             Vf_temp = np.zeros(Vgt.shape)
             Vf_temp[np.where(Vf == Lf)] = 1
 
-            intersection = np.logical_and(Vgt_temp, Vf_temp).sum().astype(np.float)
+            intersection = np.logical_and(Vgt_temp, Vf_temp).sum().astype(float)
             intersection_pixels += intersection
             if(intersection > max_intersection):
                 max_intersection = intersection
@@ -267,8 +267,8 @@ def evaluate_iou_volume(Vf, Vgt, params_t=False):
             Vf_temp = np.zeros(Vgt.shape)
             Vf_temp[np.where(Vf == Lf)] = 1
 
-            intersection = np.logical_and(Vgt_temp, Vf_temp).sum().astype(np.float)
-            union = np.logical_or(Vgt_temp, Vf_temp).sum().astype(np.float)
+            intersection = np.logical_and(Vgt_temp, Vf_temp).sum().astype(float)
+            union = np.logical_or(Vgt_temp, Vf_temp).sum().astype(float)
 
             IOU = intersection / union
 
@@ -347,7 +347,7 @@ def evaluate_fiber_detection(Vf, Vgt, params_t=None):
                 idxs_f = np.where(Vf == Lf)
                 Vf_temp[idxs_f] = 1
                 volume_f = len(idxs_f[0])
-                intersection = np.logical_and(Vgt_temp2, Vf_temp).sum().astype(np.float)
+                intersection = np.logical_and(Vgt_temp2, Vf_temp).sum().astype(float)
                 if(float(intersection) / float(volume_gt) > T_good_fiber):
                     detected_fibers += 1
                     detected_flag = 1

@@ -6,8 +6,8 @@ try:
     from .geometry import rotation_matrix_from_axis_and_angle, projection_matrix, rotation_matrix_from_axis_and_vector
     from .tensors_io import save_subvolume
 except:
-    from geometry import rotation_matrix_from_axis_and_angle, projection_matrix, rotation_matrix_from_axis_and_vector
-    from tensors_io import save_subvolume
+    from codes.utils.geometry import rotation_matrix_from_axis_and_angle, projection_matrix, rotation_matrix_from_axis_and_vector
+    from codes.utils.tensors_io import save_subvolume
 
 class Fiber:
     def __init__(self, tube, label=1):

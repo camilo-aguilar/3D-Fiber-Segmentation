@@ -8,7 +8,7 @@ import torch
 import scipy.ndimage as ndi
 import os
 from scipy import ndimage as ndi
-from skimage.morphology import watershed
+# from skimage.morphology import watershed
 from collections import defaultdict
 
 
@@ -243,7 +243,7 @@ def test_semantic_w_instance(params_t, length=-1):
     device = params_t.device
     data_volume, masks, V_or = tensors_io.load_data_and_masks(params_t)
 
-    if(params_t.dataset_name == "2016_s"):
+    if(params_t.dataset_name == "2016_s" and False):
         data_volume = data_volume[:, :, 60:, 42:, 70:]
         masks = masks[:, :, 60:, 42:, 70:]
 
@@ -302,6 +302,7 @@ def test_semantic_w_instance(params_t, length=-1):
 
     print("FINISHED TESTING")
     return data_volume, final_pred, final_fibers, masks, seg_eval, inst_eval
+
 
 #################################################################################################################
 # Quick Test
@@ -390,6 +391,93 @@ def quick_seg_inst_test(params_t, start_point=[0, 0, 0]):
         return mini_V_or, final_pred, final_fibers, final_clusters, mini_M, seg_eval, inst_eval, inst_eval_object_wise, Ra
     else:
         return mini_V_or, final_pred, final_fibers, mini_M, seg_eval, inst_eval, inst_eval_object_wise, Ra
+
+
+def quick_seg_inst_test2(params_t, start_point=[0, 0, 0]):
+    print("Starting testing Quick Semantic and Instance for " + params_t.network_name + " in device " + str(params_t.device))
+    print("Window Size: {}. N Classes: {} N Embeddings: {} N Dim{}".format(params_t.cube_size, params_t.n_classes, params_t.n_embeddings, params_t.ndims))
+    print("eps: {}. min_points: {}".format(params_t.eps_param, params_t.min_samples_param))
+    print("For dataset " + params_t.dataset_name + " version " + str(params_t.dataset_version))
+    print("~~~~Using GPU~~~~")
+
+    device = params_t.device
+    data_volume, masks, V_or = tensors_io.load_data_and_masks(params_t)
+
+    if(params_t.cleaning_sangids is True):
+        (mini_V_or, mini_M) = tensors_io.full_crop_3D_image_batched(V_or, masks, start_point[0], start_point[1], start_point[2], (params_t.cube_size))
+
+    print("Cropping Mini Volume and Mask")
+    max_fibers = 0
+    while(max_fibers < 2):
+        print("Testing Cropping at", start_point)
+        (mini_V, mini_M) = tensors_io.full_crop_3D_image_batched(data_volume, masks, start_point[0], start_point[1], start_point[2], (params_t.cube_size))
+        start_point = [(1 + int(np.random.rand(1, 1) * (masks.shape[i + 2] - 2))) for i in range(3)]
+        if(params_t.testing_mask is not None):
+            max_fibers = len(torch.unique(mini_M))
+        else:
+            max_fibers = 100
+    # If networks have single output
+    if(params_t.net_i is None):
+        # ######################################## Semantic and Instance Ensemble ###########################################
+        net = params_t.net
+        net = net.to(device)
+        if(params_t.debug):
+            final_pred, final_fibers, final_clusters = net.forward_inference(mini_V.to(device), params_t, mini_M)
+        else:
+            final_pred, final_fibers = net.forward_inference(mini_V.to(device), params_t)
+    else:
+        net_s = params_t.net
+        net_e = params_t.net_i
+
+        # ###############################################Semantic Segmentation ############################################################
+        print("Getting Semantic Seg")
+        final_pred = get_only_segmentation(net_s.to(device), mini_V.to(device), params_t.n_classes, params_t.cube_size)
+
+
+        if(params_t.dataset_name == "voids"):
+            # tensors_io.save_subvolume_instances((data_volume * params_t.std_d) + params_t.mu_d, final_pred, "test_voids")
+            print(final_pred.shape)
+            final_pred = final_pred[:, :, 0:64, 0:64, 0:64]
+            mini_V = (final_pred * 0).float()
+            masks = final_pred * 0;
+            params_t.save_quick_results((mini_V * params_t.std_d) + params_t.mu_d, final_pred, final_pred, masks, [1, 1, 1], [1, 1, 1])
+            exit()
+
+
+        # ################################################Intance Segmentation ############################################################
+        print("Getting Instance Seg")
+        net_i = net_e.to(device)
+        if(params_t.debug):
+            final_fibers, final_clusters = net_i.forward_inference(mini_V.to(device), final_pred.to(device), params_t, mini_M)
+        else:
+            final_fibers = net_i.forward_inference(mini_V.to(device), final_pred.to(device), params_t)
+
+    mini_V = (mini_V * params_t.std_d) + params_t.mu_d
+
+    # final_fibers = refine_watershed(final_fibers, final_pred, dbscan=True)
+    if(params_t.testing_mask is not None):
+        seg_eval = evaluation.evaluate_segmentation(final_pred.cpu(), mini_M.cpu())
+        # inst_eval = evaluation.evaluate_iou(final_fibers.cpu().numpy(), mini_M.cpu().numpy(), params_t)
+        inst_eval = evaluation.evaluate_iou_pixelwise(final_fibers.cpu().numpy(), mini_M.cpu().numpy(), params_t)
+        inst_eval_object_wise = evaluation.evaluate_iou(final_fibers.cpu().numpy(), mini_M.cpu().numpy(), params_t)
+
+        Ra = evaluation.evaluate_adjusted_rand_index_torch(final_fibers.to(device), mini_M.to(device))
+    else:
+        seg_eval = [1, 1, 1]
+        inst_eval = [1, 1, 1]
+        inst_eval_object_wise = [1, 1, 1]
+        Ra = 1
+        mini_M = mini_M * 0
+
+    if(params_t.cleaning_sangids is False):
+        mini_V_or = mini_V
+
+    print("FINISHED TESTING")
+    if(params_t.debug):
+        return mini_V_or, final_pred, final_fibers, final_clusters, mini_M, seg_eval, inst_eval, inst_eval_object_wise, Ra
+    else:
+        return mini_V_or, final_pred, final_fibers, mini_M, seg_eval, inst_eval, inst_eval_object_wise, Ra
+
 
 
 def refine_watershed(labels, mask, dbscan=False):

@@ -9,7 +9,7 @@
 ## Usage
 Run:
 ```
-python main_cvpr.py
+python simple_demo.py
 
 ```
 
